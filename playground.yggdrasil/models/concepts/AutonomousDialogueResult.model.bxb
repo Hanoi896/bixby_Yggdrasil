@@ -1,0 +1,51 @@
+structure (AutonomousDialogueResult) {
+  description (온디바이스 EXAONE 3.0 모델 및 Hugin 엔진에 의해 처리된 자율 대화 결과)
+  
+  property (utterance) {
+    type (UserUtterance)
+    min (Required) max (One)
+    visibility (Private)
+  }
+  
+  property (speechResponse) {
+    type (viv.core.Text)
+    min (Required) max (One)
+    description (빅스비 음성 TTS로 출력할 자연스러운 한국어 답변)
+  }
+  
+  property (displayText) {
+    type (viv.core.Text)
+    min (Required) max (One)
+    description (빅스비 화면에 렌더링할 상세 텍스트)
+  }
+  
+  property (thoughtProcess) {
+    type (viv.core.Text)
+    min (Optional) max (One)
+    description (휴긴의 단계별 추론 및 판단 과정)
+  }
+  
+  property (tierName) {
+    type (TierName)
+    min (Optional) max (One)
+    description (의사결정을 주도한 판테온 계층)
+  }
+  
+  property (actionName) {
+    type (viv.core.Text)
+    min (Optional) max (One)
+    description (연계 실행된 시스템 도구 또는 작업명)
+  }
+  
+  property (isLocalInference) {
+    type (viv.core.Boolean)
+    min (Required) max (One)
+    description (기기 내 온디바이스 LLM 처리 여부)
+  }
+  
+  property (latencyMs) {
+    type (viv.core.Integer)
+    min (Optional) max (One)
+    description (추론 및 응답 생성 소요 시간 밀리초)
+  }
+}

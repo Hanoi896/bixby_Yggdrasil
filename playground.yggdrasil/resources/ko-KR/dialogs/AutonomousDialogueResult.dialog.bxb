@@ -1,0 +1,4 @@
+dialog (Result) {
+  match: AutonomousDialogueResult (this)
+  template ("#{value(this.speechResponse)}")
+}

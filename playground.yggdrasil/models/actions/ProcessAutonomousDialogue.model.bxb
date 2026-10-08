@@ -1,0 +1,13 @@
+action (ProcessAutonomousDialogue) {
+  type (Calculation)
+  description (사용자의 자유 발화를 온디바이스 EXAONE 3.0 LLM과 Hugin 에이전트에 전달하여 자율 대화를 수행합니다.)
+  
+  collect {
+    input (utterance) {
+      type (UserUtterance)
+      min (Required) max (One)
+    }
+  }
+  
+  output (AutonomousDialogueResult)
+}

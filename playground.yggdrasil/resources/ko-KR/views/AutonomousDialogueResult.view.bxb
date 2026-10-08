@@ -1,0 +1,64 @@
+result-view {
+  match: AutonomousDialogueResult (this)
+
+  render {
+    layout {
+      section {
+        content {
+          // 상단 상태 뱃지
+          hbox {
+            content {
+              vbox {
+                content {
+                  text {
+                    value ("🦅 Hugin On-Device AI")
+                    style (Title_S)
+                  }
+                  text {
+                    value ("EXAONE 3.0 2.4B • 100% 로컬 보안 연산")
+                    style (Detail_M_Soft)
+                  }
+                }
+              }
+            }
+          }
+
+          divider
+
+          // 사용자 발화
+          paragraph {
+            value ("**내 질문:** #{value(this.utterance)}")
+            style (Detail_L)
+          }
+
+          // AI 응답 내용
+          paragraph {
+            value ("#{value(this.displayText)}")
+            style (Title_M)
+          }
+
+          divider
+
+          // 상세 실행 정보 카드
+          if (exists(this.thoughtProcess)) {
+            single-line {
+              text {
+                value ("**추론:** #{value(this.thoughtProcess)}")
+                style (Detail_M_Soft)
+              }
+            }
+          }
+
+          if (exists(this.latencyMs)) {
+            single-line {
+              text {
+                value ("응답 속도: #{value(this.latencyMs)} ms")
+                style (Detail_M_Soft)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

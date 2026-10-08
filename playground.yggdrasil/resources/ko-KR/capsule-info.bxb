@@ -1,0 +1,13 @@
+capsule-info {
+  display-name (이그드라실)
+  developer-name (Hugin-Munin)
+  icon-asset (/assets/icon.png)
+  description (갤럭시 S26 울트라 온디바이스에서 작동하는 개인 AI 비서)
+  search-keywords {
+    keyword (이그드라실)
+    keyword (휴긴)
+    keyword (비서)
+    keyword (AI)
+  }
+  dispatch-name (이그드라실)
+}
