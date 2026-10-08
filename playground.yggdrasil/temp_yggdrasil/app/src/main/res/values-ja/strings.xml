@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App Name -->
+    <string name="app_name">ユグドラシル</string>
+    
+    <!-- Dashboard -->
+    <string name="dashboard_title">ユグドラシルダッシュボード</string>
+    <string name="status_active">システム稼働中</string>
+    <string name="status_paused">学習一時停止</string>
+    <string name="status_monitoring">モニタリングと学習中</string>
+    <string name="status_privacy_mode">プライバシーモード有効</string>
+    <string name="quick_actions">クイックアクション</string>
+    <string name="system_safety">システムと安全</string>
+    <string name="recent_activity">最近のアクティビティ</string>
+    
+    <!-- Quick Actions -->
+    <string name="action_permissions">権限</string>
+    <string name="action_assistant">アシスタント</string>
+    <string name="action_privacy">プライバシー</string>
+    <string name="action_trustees">受託者</string>
+    <string name="action_backup">バックアップ</string>
+    <string name="action_break_glass">緊急アクセス</string>
+    
+    <!-- Navigation -->
+    <string name="nav_back">戻る</string>
+    <string name="nav_close">閉じる</string>
+    
+    <!-- Chat -->
+    <string name="chat_title">アシスタント</string>
+    <string name="chat_placeholder">ユグドラシルにメッセージを送信...</string>
+    <string name="chat_send">送信</string>
+    <string name="chat_voice">音声</string>
+    
+    <!-- Permissions -->
+    <string name="permissions_title">権限管理</string>
+    <string name="permissions_grant">権限付与</string>
+    <string name="permissions_revoke">取り消し</string>
+    <string name="permissions_level">レベル %1$d</string>
+    <string name="permissions_active">有効な権限</string>
+    <string name="permissions_request_new">新しい権限をリクエスト</string>
+    <string name="permissions_expires">期限: %1$s</string>
+    <string name="level_0">L0 オブザーバー</string>
+    <string name="level_0_desc">UI表示のみ</string>
+    <string name="level_1">L1 制限付き読み取り</string>
+    <string name="level_1_desc">タイトル/メタデータ</string>
+    <string name="level_2">L2 拡張読み取り</string>
+    <string name="level_2_desc">一部コンテンツ</string>
+    <string name="level_3">L3 半自動</string>
+    <string name="level_3_desc">IoT制御、自動化</string>
+    <string name="level_4">L4 機密処理</string>
+    <string name="level_4_desc">ファイル転送</string>
+    <string name="level_5">L5 金融/取引</string>
+    <string name="level_5_desc">決済呼び出し</string>
+    <string name="level_6">L6 コミュニケーション</string>
+    <string name="level_6_desc">会話代行</string>
+    <string name="level_7">L7 権限委任</string>
+    <string name="level_7_desc">全権委任</string>
+    <string name="level_8">L8 組織的行動</string>
+    <string name="level_8_desc">チーム管理</string>
+    <string name="level_9">L9 法的/公的</string>
+    <string name="level_9_desc">法的文書</string>
+    <string name="level_10">L10 全権</string>
+    <string name="level_10_desc">全ての行動</string>
+    
+    <!-- Privacy -->
+    <string name="privacy_title">プライバシーと学習制御</string>
+    <string name="privacy_pause">学習を一時停止</string>
+    <string name="privacy_resume">学習を再開</string>
+    
+    <!-- Trustees -->
+    <string name="trustees_title">受託者管理 (L6+)</string>
+    <string name="trustees_add">受託者を追加</string>
+    <string name="trustees_name">名前</string>
+    <string name="trustees_relationship">関係</string>
+    
+    <!-- Break Glass -->
+    <string name="break_glass_title">緊急アクセス</string>
+    <string name="break_glass_active">緊急モード\n有効</string>
+    <string name="break_glass_inactive">緊急アクセス</string>
+    <string name="break_glass_warning">⚠️ 全システムアクセス権限付与</string>
+    <string name="break_glass_details">• すべての操作が最高優先度で記録されます\n• 受託者に通知されました\n• 緊急事態が解決したら無効化してください</string>
+    <string name="break_glass_use_only">極度の緊急事態のみ使用してください</string>
+    <string name="break_glass_description">このモードは、すべてのデータと機能への即時かつ無制限のアクセスを付与します。</string>
+    <string name="break_glass_consequences">結果:</string>
+    <string name="break_glass_consequences_details">• すべての受託者に即座に通知されます\n• 永久監査ログが作成されます\n• 理由を提供する必要があります</string>
+    <string name="break_glass_reason">緊急アクセスの理由</string>
+    <string name="break_glass_activate">緊急アクセス (有効化)</string>
+    <string name="break_glass_deactivate">緊急モードを無効化</string>
+    
+    <!-- Backup -->
+    <string name="backup_success">%1$s にバックアップが正常に作成されました</string>
+    <string name="backup_failed">バックアップ失敗: %1$s</string>
+    <string name="backup_db_not_found">データベースが見つかりません</string>
+    <string name="backup_db_not_accessible">データベースファイルにアクセスできません</string>
+    <string name="backup_read_failed">データベース読み取り失敗: %1$s</string>
+    
+    <!-- Errors -->
+    <string name="error_unknown">不明なエラーが発生しました</string>
+    <string name="error_permission_denied">権限が拒否されました</string>
+    <string name="error_network">ネットワークエラー</string>
+    
+    <!-- Onboarding & Language Selection -->
+    <string name="onboarding_welcome">ようこそ</string>
+    <string name="onboarding_select_language">言語を選択してください</string>
+    <string name="language_korean">한국어</string>
+    <string name="language_english">English</string>
+    <string name="language_japanese">日本語</string>
+    <string name="button_continue">続ける</string>
+    <string name="button_skip">スキップ</string>
+    <string name="button_next">次へ</string>
+    <string name="button_finish">完了</string>
+    
+    <!-- Profile Setup -->
+    <string name="profile_title">基盤構築</string>
+    <string name="profile_subtitle">ユグドラシルを初期化するために情報を入力してください</string>
+    <string name="profile_name_label">名前</string>
+    <string name="profile_name_hint">名前を入力してください</string>
+    <string name="profile_phone_label">電話番号</string>
+    <string name="profile_phone_hint">+81 90-1234-5678</string>
+    <string name="profile_dob_label">生年月日</string>
+    <string name="profile_dob_hint">YYYY-MM-DD</string>
+    
+    <!-- Permission Requests -->
+    <string name="permission_request_title">権限リクエスト</string>
+    <string name="permission_audio">音声機能にマイク権限が必要です</string>
+    <string name="permission_calendar">スケジュール管理にカレンダーアクセスが必要です</string>
+    <string name="permission_location">位置情報ベース機能に位置情報権限が必要です</string>
+    <string name="permission_contacts">連絡先統合に連絡先アクセスが必要です</string>
+    <string name="permission_notifications">重要な更新に通知権限が必要です</string>
+    
+    <!-- Survey Section -->
+    <string name="survey_title">あなたを知る</string>
+    <string name="survey_subtitle">ユグドラシルがあなたをより理解できるようにお答えください</string>
+    <string name="survey_progress">%1$d / %2$d</string>
+    
+    <!-- Likert Scale -->
+    <string name="likert_1">全くそう思わない</string>
+    <string name="likert_2">そう思わない</string>
+    <string name="likert_3">普通</string>
+    <string name="likert_4">そう思う</string>
+    <string name="likert_5">とてもそう思う</string>
+    
+    <!-- Survey Questions - Personality -->
+    <string name="survey_q1">新しい人との出会いを楽しんでいる</string>
+    <string name="survey_q2">仕事を始める前に計画を立てる方だ</string>
+    <string name="survey_q3">決定を下す際、論理とデータを重視する</string>
+    <string name="survey_q4">感情に基づいて選択することが多い</string>
+    <string name="survey_q5">新しい経験や冒険が好きだ</string>
+    <string name="survey_q6">一人の時間が必要だ</string>
+    <string name="survey_q7">スマートフォンやコンピュータなどの技術活用に長けている</string>
+    <string name="survey_q8">お金を使う時は慎重に考える方だ</string>
+    <string name="survey_q9">健康管理に関心がある</string>
+    <string name="survey_q10">素早い決定を好む</string>
+    
+    <!-- Survey Questions - Lifestyle -->
+    <string name="survey_q11">ストレスを感じると感情的に反応する</string>
+    <string name="survey_q12">問題解決時に体系的にアプローチする</string>
+    <string name="survey_q13">新しいアプリやサービスをすぐに覚える</string>
+    <string name="survey_q14">毎月貯金する習慣がある</string>
+    <string name="survey_q15">慣れないことも試してみる</string>
+    <string name="survey_q16">定期的に運動している</string>
+    
+    <!-- Consent Section -->
+    <string name="consent_title">利用規約と同意</string>
+    <string name="consent_subtitle">以下の内容を確認して同意してください</string>
+    <string name="consent_scroll_hint">スクロールして内容を確認してください</string>
+    <string name="consent_required">(必須)</string>
+    <string name="consent_optional">(任意)</string>
+    <string name="consent_agree_all">全てに同意</string>
+    
+    <!-- Consent 1: Terms of Service -->
+    <string name="consent_tos_title">サービス利用規約</string>
+    <string name="consent_tos_content">第1条（目的）\n本規約は、ユグドラシル（以下「サービス」）の利用に関して、会社と利用者間の権利、義務および責任事項を規定することを目的とします。\n\n第2条（定義）\n1.「サービス」とは、AIベースの個人アシスタントサービスを指します。\n2.「利用者」とは、本規約に同意しサービスを利用する者を指します。\n\n第3条（規約の効力）\n本規約は、サービス画面に掲示またはその他の方法で利用者に通知することにより効力が発生します。</string>
+    
+    <!-- Consent 2: Privacy Policy -->
+    <string name="consent_privacy_title">個人情報の収集および利用同意</string>
+    <string name="consent_privacy_content">1. 収集する個人情報項目\n- 必須：氏名、連絡先、生年月日\n- 任意：プロフィール写真、興味、スケジュール情報\n\n2. 個人情報の収集および利用目的\n- サービス提供およびパーソナライゼーション\n- ユーザー向けAI学習\n- サービス改善および統計分析\n\n3. 個人情報の保持および利用期間\n- サービス利用終了まで\n- 関連法令により保存が必要な場合は該当期間</string>
+    
+    <!-- Consent 3: Overseas Data Transfer -->
+    <string name="consent_overseas_title">個人情報の海外移転同意</string>
+    <string name="consent_overseas_content">個人情報の国外移転に関する事項\n\n1. 移転される個人情報項目\n- 氏名、連絡先、サービス利用記録、AI学習データ\n\n2. 移転先の国および時期\n- 米国、日本、EU等（サービス提供時）\n\n3. 移転先\n- Amazon Web Services、Google Cloud Platform\n\n4. 移転先の個人情報利用目的\n- クラウドサーバー運営およびデータ保存\n\n5. 保持および利用期間\n- サービス利用終了後3年\n\n※ 同意を拒否する権利がありますが、拒否した場合、海外サーバーベースのサービス利用が制限される場合があります。</string>
+    
+    <!-- Consent 4: Virtual Account Access -->
+    <string name="consent_account_title">仮想口座アクセス権限および代理人同意</string>
+    <string name="consent_account_content">仮想口座代理アクセス権限付与同意書\n\n本人はユグドラシルAIエージェントに以下の権限を付与します：\n\n1. 代理権限の範囲\n- 本人名義の仮想口座残高照会\n- 事前設定限度内の送金実行\n- 定期決済および購読管理\n\n2. 権限行使条件\n- 全ての取引は本人の事前承認が必要\n- 1回取引限度：5,000円\n- 1日取引限度：20,000円\n\n3. セキュリティと責任\n- 全ての取引記録はリアルタイムで保存\n- 異常取引検知時は即座に中断\n- 本人の過失でない場合は会社が責任\n\n4. 権限撤回\n- 設定からいつでも権限撤回可能</string>
+    
+    <!-- Consent 5: Micro Loan Terms -->
+    <string name="consent_loan_title">少額ローン関連同意</string>
+    <string name="consent_loan_content">少額ローン約款\n\n【貸金業法準拠】\n\n1. ローン条件\n- 1件あたりの最大限度：10万円\n- 最大金利：年20%（法定上限金利以内）\n- 返済期間：最大4週間\n\n2. 利息計算方式\n- 日割り計算、先取り利息控除不可\n- 延滞時年20%以内の遅延利息\n\n3. 重要なお知らせ\n- 過度な借入は財政健全性に害を及ぼす可能性があります\n- 返済能力を考慮して慎重にご利用ください\n\n※ 本サービスは登録された貸金業者を通じて提供されます。</string>
+    
+    <!-- Consent 6: Marketing -->
+    <string name="consent_marketing_title">マーケティング情報受信同意</string>
+    <string name="consent_marketing_content">マーケティングおよび広告性情報受信同意\n\n1. 受信情報\n- 新機能のお知らせ\n- イベントおよびプロモーション\n- パーソナライズされたサービス推薦\n\n2. 受信方法\n- アプリプッシュ通知\n- メール\n- SMS\n\n3. 同意撤回\n- 設定からいつでも受信拒否可能\n\n※ 任意の同意項目であり、同意しなくてもサービス利用に制限はありません。</string>
+    
+    <!-- Consent Buttons -->
+    <string name="consent_i_agree">同意します</string>
+    <string name="consent_view_details">詳細を見る</string>
+</resources>
+

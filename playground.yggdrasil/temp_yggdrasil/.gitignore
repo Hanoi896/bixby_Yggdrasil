@@ -1,0 +1,47 @@
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Gradle
+.gradle/
+build/
+*/build/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# Android Studio
+.idea/
+*.iml
+.DS_Store
+local.properties
+
+# NDK
+obj/
+.externalNativeBuild/
+.cxx/
+
+# Logs
+*.log
+
+# Backend
+backend/hugin-munin-server
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+
+# Web Dashboard
+web-dashboard/node_modules/
+web-dashboard/dist/
+web-dashboard/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.keystore
+*.jks
+secrets.properties
