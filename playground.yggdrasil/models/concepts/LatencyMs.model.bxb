@@ -1,0 +1,3 @@
+integer (LatencyMs) {
+  description (추론 소요 시간 밀리초)
+}

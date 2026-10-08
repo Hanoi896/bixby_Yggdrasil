@@ -1,0 +1,3 @@
+integer (ActiveTrusteesCount) {
+  description (현재 등록된 신뢰인 수)
+}

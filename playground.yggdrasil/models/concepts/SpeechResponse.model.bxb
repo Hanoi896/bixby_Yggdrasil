@@ -1,0 +1,3 @@
+text (SpeechResponse) {
+  description (빅스비 음성 TTS 출력 텍스트)
+}

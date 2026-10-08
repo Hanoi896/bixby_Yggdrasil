@@ -1,0 +1,3 @@
+integer (HealthScore) {
+  description (영역의 건전성 점수 0-100)
+}

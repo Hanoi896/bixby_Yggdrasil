@@ -1,0 +1,3 @@
+integer (Confidence) {
+  description (휴긴의 추론 신뢰도 점수 0-100)
+}

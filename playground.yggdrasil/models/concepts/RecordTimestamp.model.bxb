@@ -1,0 +1,3 @@
+text (RecordTimestamp) {
+  description (기억 기록 타임스탬프)
+}

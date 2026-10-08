@@ -5,15 +5,15 @@ structure (YggdrasilGrowthStatus) {
     min (Required) max (One)
   }
   property (koreanStageName) {
-    type (viv.core.Text)
+    type (KoreanStageName)
     min (Required) max (One)
   }
   property (growthPercent) {
-    type (viv.core.Integer)
+    type (GrowthPercent)
     min (Required) max (One)
   }
   property (wisdomPoints) {
-    type (viv.core.Integer)
+    type (WisdomPoints)
     min (Required) max (One)
   }
   property (guardianAgent) {
@@ -21,11 +21,11 @@ structure (YggdrasilGrowthStatus) {
     min (Required) max (One)
   }
   property (unlockedAbilities) {
-    type (viv.core.Text)
+    type (UnlockedAbility)
     min (Required) max (Many)
   }
   property (nextStageRequirement) {
-    type (viv.core.Text)
+    type (NextStageRequirement)
     min (Required) max (One)
   }
 }

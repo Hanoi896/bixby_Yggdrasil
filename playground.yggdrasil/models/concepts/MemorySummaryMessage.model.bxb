@@ -1,0 +1,3 @@
+text (MemorySummaryMessage) {
+  description (기억 검색 요약 안내 메시지)
+}

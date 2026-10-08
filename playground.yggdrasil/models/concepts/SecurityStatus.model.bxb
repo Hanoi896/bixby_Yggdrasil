@@ -5,27 +5,27 @@ structure (SecurityStatus) {
     min (Required) max (One)
   }
   property (levelTitle) {
-    type (viv.core.Text)
+    type (LevelTitle)
     min (Required) max (One)
   }
   property (levelDescription) {
-    type (viv.core.Text)
+    type (LevelDescription)
     min (Required) max (One)
   }
   property (isBreakGlassActive) {
-    type (viv.core.Boolean)
+    type (IsBreakGlassActive)
     min (Required) max (One)
   }
   property (isLearningBlocked) {
-    type (viv.core.Boolean)
+    type (IsLearningBlocked)
     min (Required) max (One)
   }
   property (multiSigRequired) {
-    type (viv.core.Boolean)
+    type (MultiSigRequired)
     min (Required) max (One)
   }
   property (activeTrusteesCount) {
-    type (viv.core.Integer)
+    type (ActiveTrusteesCount)
     min (Required) max (One)
   }
 }

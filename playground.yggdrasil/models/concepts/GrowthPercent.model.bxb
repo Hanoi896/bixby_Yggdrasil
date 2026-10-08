@@ -1,0 +1,3 @@
+integer (GrowthPercent) {
+  description (세계수 단계별 성장 퍼센트 0-100)
+}

@@ -1,7 +1,7 @@
 structure (MemoryQueryResult) {
   description (뮤닌의 기억 검색 및 회상 결과)
   property (query) {
-    type (viv.core.Text)
+    type (QueryTopic)
     min (Optional) max (One)
   }
   property (records) {
@@ -9,11 +9,11 @@ structure (MemoryQueryResult) {
     min (Optional) max (Many)
   }
   property (totalCount) {
-    type (viv.core.Integer)
+    type (MemoryTotalCount)
     min (Required) max (One)
   }
   property (summaryMessage) {
-    type (viv.core.Text)
+    type (MemorySummaryMessage)
     min (Required) max (One)
   }
 }

@@ -9,15 +9,15 @@ structure (RealmStatus) {
     min (Required) max (One)
   }
   property (description) {
-    type (viv.core.Text)
+    type (RealmDescription)
     min (Required) max (One)
   }
   property (isSecure) {
-    type (viv.core.Boolean)
+    type (IsSecure)
     min (Required) max (One)
   }
   property (healthScore) {
-    type (viv.core.Integer)
+    type (HealthScore)
     min (Required) max (One)
   }
 }

@@ -9,19 +9,19 @@ structure (HuginAdvice) {
     min (Required) max (One)
   }
   property (thoughtProcess) {
-    type (viv.core.Text)
+    type (ThoughtProcess)
     min (Required) max (One)
   }
   property (recommendation) {
-    type (viv.core.Text)
+    type (Recommendation)
     min (Required) max (One)
   }
   property (actionPlan) {
-    type (viv.core.Text)
+    type (ActionPlan)
     min (Optional) max (Many)
   }
   property (confidence) {
-    type (viv.core.Integer)
+    type (Confidence)
     min (Required) max (One)
   }
 }

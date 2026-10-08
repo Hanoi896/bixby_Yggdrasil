@@ -9,6 +9,11 @@ test_local_server.py
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import time
+import sys
+
+# Windows 콘솔 인코딩 안전 처리
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 PORT = 8080
 
@@ -22,7 +27,7 @@ class MockLlmHandler(BaseHTTPRequestHandler):
                 body = json.loads(post_data.decode('utf-8'))
                 messages = body.get('messages', [])
                 user_msg = messages[-1].get('content', '') if messages else ''
-                print(f"[수신] 사용자 발화: {user_msg}")
+                print(f"[RECV] 사용자 발화: {user_msg}")
             except Exception as e:
                 user_msg = "알 수 없는 입력"
 
@@ -56,7 +61,7 @@ class MockLlmHandler(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
-            print(f"[응답] EXAONE 발화: {reply_text}\n")
+            print(f"[SEND] EXAONE 발화: {reply_text}\n")
         else:
             self.send_response(404)
             self.end_headers()
@@ -65,9 +70,9 @@ def run():
     server_address = ('127.0.0.1', PORT)
     httpd = HTTPServer(server_address, MockLlmHandler)
     print("=" * 60)
-    print(f"🚀 온디바이스 로컬 LLM 테스트 서버 구동 완료!")
+    print(f"[START] 온디바이스 로컬 LLM 테스트 서버 구동 완료!")
     print(f"   주소: http://127.0.0.1:{PORT}/v1/chat/completions")
-    print(f"   빅스비 스튜디오 시뮬레이터에서 자유롭게 발화해 보세요.")
+    print(f"   빅스비 스튜디오 시뮬레이터에서 자유롭게 테스트해 보세요.")
     print("=" * 60)
     try:
         httpd.serve_forever()

@@ -1,0 +1,3 @@
+boolean (IsEncrypted) {
+  description (데이터 암호화 저장 여부 플래그)
+}

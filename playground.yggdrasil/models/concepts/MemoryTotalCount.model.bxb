@@ -1,0 +1,3 @@
+integer (MemoryTotalCount) {
+  description (검색된 기억 총 개수)
+}

@@ -13,7 +13,7 @@ structure (PantheonTier) {
     min (Required) max (One)
   }
   property (description) {
-    type (viv.core.Text)
+    type (TierDescription)
     min (Required) max (One)
   }
   property (realm) {

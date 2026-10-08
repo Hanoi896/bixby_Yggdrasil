@@ -1,0 +1,3 @@
+boolean (IsSecure) {
+  description (영역의 보안 무결성 상태)
+}

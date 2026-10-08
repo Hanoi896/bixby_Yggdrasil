@@ -1,0 +1,3 @@
+text (DisplayText) {
+  description (빅스비 화면 렌더링 텍스트)
+}

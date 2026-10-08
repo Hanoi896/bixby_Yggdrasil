@@ -17,7 +17,7 @@ structure (PantheonOverview) {
     min (Required) max (Many)
   }
   property (activeOdinMessage) {
-    type (viv.core.Text)
+    type (ActiveOdinMessage)
     min (Required) max (One)
   }
 }
