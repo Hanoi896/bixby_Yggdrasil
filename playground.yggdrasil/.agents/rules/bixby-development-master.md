@@ -53,3 +53,11 @@ Always strictly adhere to the Bixby Developer Studio conventions:
 ## 5. Git & Workspace Hygiene
 - Do not commit local build artifacts, cache folders, or temporary files (`.bixby/`, `build/`, `node_modules/`, `.DS_Store`).
 - Follow conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `style:`).
+
+# 6. Language Rule
+- ALWAYS respond to the user in Korean (한국어), regardless of the language of the user's input, code, error logs, or documentation.
+- Applies to everything shown in chat: explanations, plans, task lists, walkthroughs, status updates, and questions.
+- Keep code, variable names, file paths, commands, and technical terms (e.g., API, endpoint, capsule) in their original English.
+- Code comments and commit messages follow the existing project convention. If none exists, write them in English.
+- Never switch to English unless the user explicitly asks for it.
+
