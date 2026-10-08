@@ -1,0 +1,5 @@
+action (GetPantheonOverview) {
+  type (Search)
+  description (신격 판테온 6대 에이전트와 9대 세계 영역의 종합 관제 상태를 조회합니다.)
+  output (PantheonOverview)
+}

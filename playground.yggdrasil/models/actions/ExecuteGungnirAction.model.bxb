@@ -1,0 +1,15 @@
+action (ExecuteGungnirAction) {
+  type (Calculation)
+  description (궁니르(Gungnir)를 통해 치명적 작업, IoT 제어, 트랜잭션 등을 원자적으로 실행합니다.)
+  collect {
+    input (actionType) {
+      type (ActionType)
+      min (Required) max (One)
+    }
+    input (requestedLevel) {
+      type (PermissionLevel)
+      min (Optional) max (One)
+    }
+  }
+  output (ExecutionResult)
+}

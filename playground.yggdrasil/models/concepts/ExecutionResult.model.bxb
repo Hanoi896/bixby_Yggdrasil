@@ -1,0 +1,27 @@
+structure (ExecutionResult) {
+  description (궁니르의 원자적 작업 실행 결과 및 서명 증빙)
+  property (success) {
+    type (viv.core.Boolean)
+    min (Required) max (One)
+  }
+  property (actionType) {
+    type (ActionType)
+    min (Required) max (One)
+  }
+  property (requiredLevel) {
+    type (PermissionLevel)
+    min (Required) max (One)
+  }
+  property (message) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (signedHash) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (realm) {
+    type (RealmName)
+    min (Required) max (One)
+  }
+}

@@ -1,0 +1,3 @@
+integer (PermissionLevel) {
+  description (L0부터 L10까지의 보안 권한 레벨)
+}

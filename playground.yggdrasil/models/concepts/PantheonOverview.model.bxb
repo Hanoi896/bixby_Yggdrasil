@@ -1,0 +1,23 @@
+structure (PantheonOverview) {
+  description (판테온 6대 신격과 9대 세계의 종합 관제 상태)
+  property (overallStatus) {
+    type (TierStatus)
+    min (Required) max (One)
+  }
+  property (securityLevel) {
+    type (RealmAccessLevel)
+    min (Required) max (One)
+  }
+  property (tiers) {
+    type (PantheonTier)
+    min (Required) max (Many)
+  }
+  property (realms) {
+    type (RealmStatus)
+    min (Required) max (Many)
+  }
+  property (activeOdinMessage) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+}

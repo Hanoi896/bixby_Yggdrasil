@@ -1,0 +1,15 @@
+action (RecordMemory) {
+  type (Calculation)
+  description (뮤닌의 Niflheim 암호화 저장소에 새로운 기억이나 일상 메모를 기록합니다.)
+  collect {
+    input (content) {
+      type (MemoryContent)
+      min (Required) max (One)
+    }
+    input (category) {
+      type (MemoryCategory)
+      min (Optional) max (One)
+    }
+  }
+  output (MemoryRecord)
+}

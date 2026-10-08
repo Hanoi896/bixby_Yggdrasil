@@ -1,0 +1,11 @@
+action (QueryMemory) {
+  type (Search)
+  description (뮤닌이 저장한 과거의 기억 및 일상 기록을 검색하거나 회상합니다.)
+  collect {
+    input (query) {
+      type (viv.core.Text)
+      min (Optional) max (One)
+    }
+  }
+  output (MemoryQueryResult)
+}

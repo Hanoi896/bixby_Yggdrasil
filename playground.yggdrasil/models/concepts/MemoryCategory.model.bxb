@@ -1,0 +1,3 @@
+text (MemoryCategory) {
+  description (기억의 분류 카테고리 - Routine, Work, Health, Secret, General 등)
+}

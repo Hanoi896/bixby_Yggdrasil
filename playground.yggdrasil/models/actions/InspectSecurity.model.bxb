@@ -1,0 +1,5 @@
+action (InspectSecurity) {
+  type (Search)
+  description (현재 L0~L10 보안 권한 레벨, 비상 Break-Glass 모드 및 머신러닝 학습 차단 상태를 점검합니다.)
+  output (SecurityStatus)
+}

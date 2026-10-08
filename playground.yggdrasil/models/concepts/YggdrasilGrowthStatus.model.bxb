@@ -1,0 +1,31 @@
+structure (YggdrasilGrowthStatus) {
+  description (세계수 위그드라실의 성장 레벨, 진화 요건, 지혜 점수 현황)
+  property (stage) {
+    type (TreeStage)
+    min (Required) max (One)
+  }
+  property (koreanStageName) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (growthPercent) {
+    type (viv.core.Integer)
+    min (Required) max (One)
+  }
+  property (wisdomPoints) {
+    type (viv.core.Integer)
+    min (Required) max (One)
+  }
+  property (guardianAgent) {
+    type (TierName)
+    min (Required) max (One)
+  }
+  property (unlockedAbilities) {
+    type (viv.core.Text)
+    min (Required) max (Many)
+  }
+  property (nextStageRequirement) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+}

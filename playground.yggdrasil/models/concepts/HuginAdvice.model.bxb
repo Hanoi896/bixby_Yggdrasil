@@ -1,0 +1,27 @@
+structure (HuginAdvice) {
+  description (휴긴의 지능적 추론 및 상황 브리핑 결과)
+  property (topic) {
+    type (QueryTopic)
+    min (Required) max (One)
+  }
+  property (intent) {
+    type (TierRole)
+    min (Required) max (One)
+  }
+  property (thoughtProcess) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (recommendation) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (actionPlan) {
+    type (viv.core.Text)
+    min (Optional) max (Many)
+  }
+  property (confidence) {
+    type (viv.core.Integer)
+    min (Required) max (One)
+  }
+}

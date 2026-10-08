@@ -1,0 +1,3 @@
+text (MemoryContent) {
+  description (뮤닌의 기억 저장소에 기록할 내용)
+}

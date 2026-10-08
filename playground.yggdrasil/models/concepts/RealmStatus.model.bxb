@@ -1,0 +1,23 @@
+structure (RealmStatus) {
+  description (9대 세계 영역의 보안 및 가동 상태)
+  property (name) {
+    type (RealmName)
+    min (Required) max (One)
+  }
+  property (accessLevel) {
+    type (RealmAccessLevel)
+    min (Required) max (One)
+  }
+  property (description) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (isSecure) {
+    type (viv.core.Boolean)
+    min (Required) max (One)
+  }
+  property (healthScore) {
+    type (viv.core.Integer)
+    min (Required) max (One)
+  }
+}

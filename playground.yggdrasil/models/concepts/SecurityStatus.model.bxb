@@ -1,0 +1,31 @@
+structure (SecurityStatus) {
+  description (L0~L10 보안 권한 현황 및 비상 탈출/학습 차단 모드 상태)
+  property (currentLevel) {
+    type (PermissionLevel)
+    min (Required) max (One)
+  }
+  property (levelTitle) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (levelDescription) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (isBreakGlassActive) {
+    type (viv.core.Boolean)
+    min (Required) max (One)
+  }
+  property (isLearningBlocked) {
+    type (viv.core.Boolean)
+    min (Required) max (One)
+  }
+  property (multiSigRequired) {
+    type (viv.core.Boolean)
+    min (Required) max (One)
+  }
+  property (activeTrusteesCount) {
+    type (viv.core.Integer)
+    min (Required) max (One)
+  }
+}

@@ -1,0 +1,23 @@
+structure (PantheonTier) {
+  description (신격 판테온 구성원 정보)
+  property (name) {
+    type (TierName)
+    min (Required) max (One)
+  }
+  property (role) {
+    type (TierRole)
+    min (Required) max (One)
+  }
+  property (status) {
+    type (TierStatus)
+    min (Required) max (One)
+  }
+  property (description) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (realm) {
+    type (RealmName)
+    min (Optional) max (One)
+  }
+}

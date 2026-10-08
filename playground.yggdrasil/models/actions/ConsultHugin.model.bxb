@@ -1,0 +1,11 @@
+action (ConsultHugin) {
+  type (Search)
+  description (휴긴에게 지능적 의도 추론, 브리핑, 상황별 행동 계획 수립을 요청합니다.)
+  collect {
+    input (topic) {
+      type (QueryTopic)
+      min (Optional) max (One)
+    }
+  }
+  output (HuginAdvice)
+}

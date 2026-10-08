@@ -1,0 +1,5 @@
+action (GetYggdrasilGrowth) {
+  type (Search)
+  description (세계수 위그드라실의 현재 성장 단계(뿌리-줄기-가지)와 진화 상태를 확인합니다.)
+  output (YggdrasilGrowthStatus)
+}

@@ -1,0 +1,27 @@
+structure (MemoryRecord) {
+  description (뮤닌이 Niflheim 저장소에 보관 중인 단일 기억 레코드)
+  property (id) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (category) {
+    type (MemoryCategory)
+    min (Required) max (One)
+  }
+  property (content) {
+    type (MemoryContent)
+    min (Required) max (One)
+  }
+  property (timestamp) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+  property (isEncrypted) {
+    type (viv.core.Boolean)
+    min (Required) max (One)
+  }
+  property (signatureHash) {
+    type (viv.core.Text)
+    min (Required) max (One)
+  }
+}

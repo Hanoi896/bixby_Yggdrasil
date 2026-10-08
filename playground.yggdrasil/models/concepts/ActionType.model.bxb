@@ -1,0 +1,3 @@
+text (ActionType) {
+  description (궁니르가 실행할 원자적 작업 유형 - IoT제어, 결제, 비상차단 등)
+}
