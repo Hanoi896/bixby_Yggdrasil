@@ -36,8 +36,46 @@ if os.path.exists(manifest_path) and os.path.exists(gradle_path):
 else:
     print("   ❌ 빌드 설정 파일이 누락되었습니다.")
 
-# 3. 빅스비 캡슐 동기화 안내
-print("\n3. 삼성 빅스비 캡슐 동기화...")
+# 3. 로컬 모델 파일 감지 및 스마트폰 자동 전송 (USB 주입)
+print("\n3. 로컬 EXAONE 3.0 / 3.5 GGUF 모델 점검...")
+model_dirs = [os.path.abspath("models"), os.path.abspath("core/android/src/main/assets/models")]
+
+detected_model = None
+for m_dir in model_dirs:
+    if os.path.exists(m_dir):
+        for f in os.listdir(m_dir):
+            if f.endswith(".gguf") and "exaone" in f.lower():
+                full_p = os.path.join(m_dir, f)
+                if os.path.getsize(full_p) > 500 * 1024 * 1024:
+                    detected_model = full_p
+                    break
+    if detected_model:
+        break
+
+if detected_model:
+    size_mb = os.path.getsize(detected_model) / (1024 * 1024)
+    print(f"   ✅ 프로젝트 내 모델 발견: {os.path.basename(detected_model)} ({size_mb:.1f} MB)")
+    if 'devices' in locals() and devices:
+        print("   📲 스마트폰으로 자동 전송을 시도합니다 (adb push)...")
+        try:
+            target_name = os.path.basename(detected_model)
+            push_cmd = ["adb", "push", detected_model, f"/sdcard/Download/{target_name}"]
+            res = subprocess.run(push_cmd, capture_output=True, text=True, check=True)
+            print(f"   🎉 스마트폰 Download 폴더로 {target_name} 전송 완료! 앱 실행 시 자동 적용됩니다.")
+        except Exception as e:
+            print(f"   ⚠️ 전송 실패 ({e}). 스마트폰 저장공간이나 권한을 확인하세요.")
+    else:
+        print("   💡 스마트폰이 USB로 연결되면 자동으로 Download 폴더로 전송할 수 있습니다.")
+else:
+    print("   ℹ️  현재 프로젝트 models/ 폴더에 .gguf 파일이 없습니다.")
+    print("   👉 EXAONE 3.5 최신 모델 다운로드 링크:")
+    print("      https://huggingface.co/Edge-Quant/EXAONE-3.5-2.4B-Instruct-Q4_K_M-GGUF")
+    print("   👉 다운받은 파일을 아래 폴더 중 하나에 넣어두시면 자동으로 감지/배포됩니다:")
+    print("      1) bixby_Yggdrasil/models/ (원클릭 USB 전송용)")
+    print("      2) bixby_Yggdrasil/core/android/src/main/assets/models/ (APK 자체 내장용)")
+
+# 4. 빅스비 캡슐 동기화 안내
+print("\n4. 삼성 빅스비 캡슐 동기화...")
 capsule_dir = os.path.abspath("playground.yggdrasil")
 print(f"   📁 캡슐 경로: {capsule_dir}")
 print("   💡 Bixby Developer Studio에서 위 폴더를 열고 [On-Device Testing]을 누르면 폰으로 즉시 동기화됩니다.")
@@ -45,3 +83,4 @@ print("   💡 Bixby Developer Studio에서 위 폴더를 열고 [On-Device Test
 print("\n" + "=" * 65)
 print("📋 상세 설치 단계는 [설치_빌드.md] 파일에 친절하게 정리되어 있습니다!")
 print("=" * 65)
+

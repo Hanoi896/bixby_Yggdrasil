@@ -353,6 +353,31 @@ fun SettingsScreen(
                         fontSize = 13.sp
                     )
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val modelSyncManager = remember { com.yggdrasil.core.storage.ModelAutoSyncManager.getInstance(context) }
+                var rollbackStatus by remember { mutableStateOf<String?>(null) }
+
+                Button(
+                    onClick = {
+                        val ok = modelSyncManager.rollbackToStableBackup()
+                        rollbackStatus = if (ok) "이전 안정 모델로 0.1초 롤백 완료!" else "보관된 이전 백업 모델이 없습니다."
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF161616),
+                        contentColor = Color.LightGray
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
+                ) {
+                    Text(
+                        rollbackStatus ?: "신버전 오류 시 ➔ 이전 안정 모델로 롤백 (0.1초)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
             // [카드 6] 비상 방어 프로토콜

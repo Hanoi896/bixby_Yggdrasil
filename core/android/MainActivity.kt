@@ -33,6 +33,15 @@ class MainActivity : ComponentActivity() {
         val proactiveManager = ProactiveRoutineManager.getInstance(this)
         val vaultManager = AppStorageVaultManager.getInstance(this)
         val breakGlassManager = BreakGlassSecurityManager.getInstance(this)
+        val modelSyncManager = com.yggdrasil.core.storage.ModelAutoSyncManager.getInstance(this)
+
+        // 앱 기동 시:
+        // 1) APK assets 내장 모델이 있다면 내부 볼트로 자동 전개 (초기 시딩)
+        // 2) 스마트폰 Download 폴더에 넣어둔 새 GGUF 모델 자동 감지 & 내부 볼트 이관
+        androidx.lifecycle.lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            modelSyncManager.seedModelFromAssetsIfPresent()
+            modelSyncManager.autoImportFromDownloadFolder()
+        }
 
         setContent {
             MainAppScreen(
