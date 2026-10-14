@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YggdrasilFunctionCallingRegistry",
+  "description": "갤럭시 S26 울트라 온디바이스 EXAONE 3.0 NPU 모델이 자율 호출하는 표준 도구(Tool) 명세 규격",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "compress_files",
+        "description": "지정된 경로의 파일 또는 디렉토리를 로컬 ZIP 압축 파일로 생성합니다.",
+        "securityPolicy": {
+          "requiredLevel": 3,
+          "realm": "Alfheim",
+          "guardian": "Sleipnir",
+          "requiresVoiceConfirmation": false
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "sourcePaths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "압축할 원본 파일 또는 폴더의 절대 경로 목록 (예: ['/storage/emulated/0/Download/doc.pdf'])"
+            },
+            "outputZipPath": {
+              "type": "string",
+              "description": "저장할 ZIP 압축 파일의 절대 경로 (예: '/storage/emulated/0/Download/archive.zip')"
+            },
+            "compressionLevel": {
+              "type": "string",
+              "enum": ["fast", "standard", "maximum"],
+              "default": "standard",
+              "description": "압축률 알고리즘 옵션"
+            }
+          },
+          "required": ["sourcePaths", "outputZipPath"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "messenger_send",
+        "description": "다양한 메신저 및 공유 플랫폼(카카오톡, 텔레그램, 슬랙, 라인, 문자/SMS, 이메일 등)을 통해 특정 대상에게 텍스트 및 첨부 파일을 전송합니다.",
+        "securityPolicy": {
+          "requiredLevel": 4,
+          "realm": "Jotunheim",
+          "guardian": "Odin",
+          "requiresVoiceConfirmation": true
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "enum": ["telegram", "kakaotalk", "slack", "line", "sms", "email", "system_share"],
+              "default": "system_share",
+              "description": "전송할 메신저/공유 플랫폼 (예: 'kakaotalk', 'telegram', 'slack', 'sms' 등)"
+            },
+            "recipient": {
+              "type": "string",
+              "description": "수신 대상 식별자 (채팅방 이름, 연락처 명칭, 전화번호, 이메일 등)"
+            },
+            "message": {
+              "type": "string",
+              "description": "전송할 텍스트 안내 메시지"
+            },
+            "attachmentPath": {
+              "type": "string",
+              "description": "외부로 전송할 첨부 파일의 절대 경로 (예: '/storage/emulated/0/Download/archive.zip')"
+            }
+          },
+          "required": ["attachmentPath"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "screen_control",
+        "description": "안드로이드 Accessibility Service를 통해 스마트폰 화면을 자율 조작(터치, 스와이프, 키 입력)합니다.",
+        "securityPolicy": {
+          "requiredLevel": 4,
+          "realm": "Nidavellir",
+          "guardian": "Gungnir",
+          "requiresVoiceConfirmation": true
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["click", "swipe", "input_text", "press_key", "screenshot"],
+              "description": "수행할 화면 조작 유형"
+            },
+            "targetText": {
+              "type": "string",
+              "description": "화면에서 찾아서 클릭할 UI 텍스트 레이블 (예: '보내기', '확인', '첨부')"
+            },
+            "coordinates": {
+              "type": "object",
+              "properties": {
+                "x": { "type": "number", "description": "X 픽셀 좌표" },
+                "y": { "type": "number", "description": "Y 픽셀 좌표" }
+              },
+              "description": "터치할 절대 화면 좌표 (targetText 미지정 시 사용)"
+            },
+            "inputText": {
+              "type": "string",
+              "description": "입력창에 직접 타이핑할 텍스트 내용"
+            },
+            "direction": {
+              "type": "string",
+              "enum": ["up", "down", "left", "right"],
+              "description": "스와이프 스크롤 방향"
+            }
+          },
+          "required": ["action"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "launch_app",
+        "description": "스마트폰에 설치된 특정 앱을 패키지명 또는 앱 이름으로 포그라운드 실행합니다.",
+        "securityPolicy": {
+          "requiredLevel": 2,
+          "realm": "Midgard",
+          "guardian": "Odin",
+          "requiresVoiceConfirmation": false
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "packageName": {
+              "type": "string",
+              "description": "실행할 앱의 안드로이드 패키지명 (예: 'org.telegram.messenger', 'com.sec.android.app.myfiles')"
+            },
+            "appName": {
+              "type": "string",
+              "description": "앱의 한글 또는 영문 표시 이름 (예: '텔레그램', '내 파일', '카카오톡')"
+            },
+            "extraUri": {
+              "type": "string",
+              "description": "앱 실행과 함께 열 딥링크 URI 또는 파일 URI"
+            }
+          },
+          "required": ["packageName"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calendar_schedule",
+        "description": "스마트폰 내부 캘린더에 일정을 등록, 조회, 수정하는 도구입니다.",
+        "securityPolicy": {
+          "requiredLevel": 3,
+          "realm": "Niflheim",
+          "guardian": "Munin",
+          "requiresVoiceConfirmation": false
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["create", "query", "update", "delete"],
+              "description": "캘린더 작업 유형"
+            },
+            "title": {
+              "type": "string",
+              "description": "일정 제목"
+            },
+            "startTime": {
+              "type": "string",
+              "description": "일정 시작 시각 (ISO-8601 형식: '2026-10-15T10:00:00')"
+            },
+            "endTime": {
+              "type": "string",
+              "description": "일정 종료 시각 (ISO-8601 형식: '2026-10-15T11:00:00')"
+            },
+            "location": {
+              "type": "string",
+              "description": "장소 또는 미팅 링크"
+            },
+            "description": {
+              "type": "string",
+              "description": "세부 메모 및 준비 사항"
+            }
+          },
+          "required": ["action", "title", "startTime"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "smarthome_control",
+        "description": "IoT 스마트홈 기기(조명, 에어컨, 스마트 플러그, 도어락, 밸브)의 상태를 원자적으로 제어합니다.",
+        "securityPolicy": {
+          "requiredLevel": 3,
+          "realm": "Nidavellir",
+          "guardian": "Gungnir",
+          "requiresVoiceConfirmation": false
+        },
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "deviceType": {
+              "type": "string",
+              "enum": ["light", "airconditioner", "plug", "lock", "valve"],
+              "description": "제어할 스마트홈 기기 분류"
+            },
+            "deviceName": {
+              "type": "string",
+              "description": "기기 명칭 (예: '거실 조명', '안방 에어컨', '현관문')"
+            },
+            "command": {
+              "type": "string",
+              "enum": ["turn_on", "turn_off", "set_temperature", "lock", "unlock"],
+              "description": "실행할 제어 명령"
+            },
+            "value": {
+              "type": "string",
+              "description": "추가 제어 설정값 (온도 수치, 모드 명칭 등)"
+            }
+          },
+          "required": ["deviceType", "deviceName", "command"]
+        }
+      }
+    }
+  ]
+}

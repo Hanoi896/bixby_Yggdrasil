@@ -5,60 +5,72 @@ result-view {
     layout {
       section {
         content {
-          // 상단 검색 뱃지
-          hbox {
+          // One UI 카드 1: 검색 헤더 및 요약 메시지
+          compound-card {
             content {
-              vbox {
+              hbox {
                 content {
-                  text {
-                    value ("🦅 Munin Memory Recall")
-                    style (Title_S)
-                  }
-                  if (exists(this.query)) {
-                    text {
-                      value ("검색어: '#{value(this.query)}' (총 #{value(this.totalCount)}건)")
-                      style (Detail_M_Soft)
-                    }
-                  } else {
-                    text {
-                      value ("전체 기억 목록 (총 #{value(this.totalCount)}건)")
-                      style (Detail_M_Soft)
+                  vbox {
+                    content {
+                      text {
+                        value ("🦅 Munin Memory Recall")
+                        style (Title_S)
+                      }
+                      if (exists(this.query)) {
+                        text {
+                          value ("검색어: '#{value(this.query)}' • 검색 결과 #{value(this.totalCount)}건")
+                          style (Detail_M_Soft)
+                        }
+                      } else {
+                        text {
+                          value ("전체 기억 목록 • 총 #{value(this.totalCount)}건")
+                          style (Detail_M_Soft)
+                        }
+                      }
                     }
                   }
                 }
               }
-            }
-          }
-
-          divider
-
-          // 요약 메시지
-          paragraph {
-            value ("#{value(this.summaryMessage)}")
-            style (Title_M)
-          }
-
-          divider
-
-          // 검색된 레코드 카드 목록
-          if (this.totalCount > 0) {
-            single-line {
-              text {
-                value ("📋 회상된 일상 및 일정 기억")
-                style (Title_S)
+              divider
+              paragraph {
+                value ("#{value(this.summaryMessage)}")
+                style (Title_M)
               }
             }
-            for-each (this.records) {
-              as (record) {
-                paragraph {
-                  value ("• [#{value(record.category)}] **#{value(record.content)}**")
-                  style (Detail_L)
+          }
+
+          // One UI 카드 2: 검색된 기억 목록
+          if (this.totalCount > 0) {
+            compound-card {
+              content {
+                single-line {
+                  text {
+                    value ("📋 회상된 일상 및 일정 기억")
+                    style (Title_S)
+                  }
+                }
+                for-each (this.records) {
+                  as (record) {
+                    paragraph {
+                      value ("• [#{value(record.category)}] #{value(record.content)}")
+                      style (Detail_L)
+                    }
+                  }
                 }
               }
             }
           }
         }
       }
+    }
+  }
+
+  conversation-drivers {
+    conversation-driver {
+      template ("오늘 일정 브리핑해줘")
+    }
+    conversation-driver {
+      template ("판테온 상태 보여줘")
     }
   }
 }

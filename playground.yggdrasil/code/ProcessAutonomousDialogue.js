@@ -4,6 +4,8 @@
  * 사용자의 자유 발화를 자율적으로 추론하고, SessionId 기반으로 이전 대화 문맥(Context)을 유지합니다.
  */
 import http from 'http';
+import { planTask } from './lib/TaskPlanner.js';
+import { interceptPlan, GATEKEEPER_STATUS } from './lib/OdinGatekeeper.js';
 
 // 세션별 최근 대화 히스토리 인메모리 저장소 (메모리 누수 방지: 최대 50세션 관리)
 const sessionStore = new Map();
@@ -22,6 +24,50 @@ export default function processAutonomousDialogue(input) {
 
   // 이전 세션 대화 기록 불러오기
   let history = sessionStore.get(sessionId) || [];
+
+  // Hugin 복합 작업 분해기(TaskPlanner) 사전 분석
+  const plan = planTask(utterance);
+  if (plan && plan.isCompound && plan.steps.length > 1) {
+    // Odin 보안 정책 인터셉터(Gatekeeper) 실시간 검증 (현재 사용자 권한: L3)
+    const gateVerdict = interceptPlan(plan, 3);
+
+    const stepDescriptions = [];
+    for (let s = 0; s < gateVerdict.evaluatedSteps.length; s++) {
+      const step = gateVerdict.evaluatedSteps[s];
+      let statusTag = '[✅ 자동 승인]';
+      if (step.status === GATEKEEPER_STATUS.REQUIRES_APPROVAL) {
+        statusTag = '[🛡️ 오딘 승인 대기]';
+      } else if (step.status === GATEKEEPER_STATUS.BLOCKED) {
+        statusTag = '[⛔ 보안 차단]';
+      }
+      stepDescriptions.push(`• ${statusTag} [${step.stepIndex}단계: ${step.toolName}] ${step.description} (L${step.securityLevel})`);
+    }
+
+    let plannerReply = `Hugin 복합 작업 분해기가 발화를 ${plan.steps.length}단계 파이프라인으로 분해했습니다:\n\n` + stepDescriptions.join('\n');
+    
+    if (gateVerdict.pausedAtStep) {
+      plannerReply += `\n\n⚠️ ${gateVerdict.summaryMessage}\n진행하시려면 '승인' 또는 '예', 취소하시려면 '취소'라고 말씀해 주세요.`;
+    }
+
+    // 세션 기록 업데이트
+    updateSessionHistory(sessionId, history, utterance, plannerReply);
+
+    const speechText = gateVerdict.pausedAtStep
+      ? `1단계는 자동 처리되었으나, ${gateVerdict.pausedAtStep.stepIndex}단계 작업은 외부 전송이므로 오딘 승인이 필요합니다.`
+      : `요청하신 복합 명령을 ${plan.steps.length}단계 파이프라인으로 안전하게 인가했습니다.`;
+
+    return {
+      utterance: utterance,
+      speechResponse: speechText,
+      displayText: plannerReply,
+      thoughtProcess: `Hugin 플래너 & Odin 게이트키퍼: ${plan.planDescription}`,
+      tierName: "Hugin",
+      actionName: "TaskDecompositionPlanner",
+      isLocalInference: true,
+      latencyMs: Date.now() - startTime,
+      sessionId: sessionId
+    };
+  }
 
   // 온디바이스 로컬 llama.cpp HTTP 엔드포인트
   const localLlmUrl = 'http://127.0.0.1:8080/v1/chat/completions';

@@ -5,113 +5,123 @@ result-view {
     layout {
       section {
         content {
-          // 상단 보안 뱃지
-          hbox {
+          // One UI 카드 1: 오딘 보안 등급 헤더 & 레벨 표시
+          compound-card {
             content {
-              vbox {
+              hbox {
                 content {
-                  text {
-                    value ("🛡️ Odin Security Audit")
-                    style (Title_S)
-                  }
-                  text {
-                    value ("L0~L10 계층 보안 및 비상 방어 프로토콜")
-                    style (Detail_M_Soft)
+                  vbox {
+                    content {
+                      text {
+                        value ("🛡️ Odin Security Clearance")
+                        style (Title_S)
+                      }
+                      text {
+                        value ("L0~L10 온디바이스 다층 격리 통제 프로토콜")
+                        style (Detail_M_Soft)
+                      }
+                    }
                   }
                 }
+              }
+              divider
+              hbox {
+                content {
+                  vbox {
+                    content {
+                      text {
+                        value ("현재 보안 권한")
+                        style (Detail_M_Soft)
+                      }
+                      text {
+                        value ("Level #{value(this.currentLevel)}")
+                        style (Title_L)
+                      }
+                    }
+                  }
+                  vbox {
+                    content {
+                      text {
+                        value ("인가 등급")
+                        style (Detail_M_Soft)
+                      }
+                      text {
+                        value ("#{value(this.levelTitle)}")
+                        style (Title_M)
+                      }
+                    }
+                  }
+                }
+              }
+              paragraph {
+                value ("#{value(this.levelDescription)}")
+                style (Detail_L)
               }
             }
           }
 
-          divider
-
-          // 현재 보안 권한 레벨
-          hbox {
+          // One UI 카드 2: 4대 핵심 방어 상태
+          compound-card {
             content {
-              vbox {
-                content {
-                  text {
-                    value ("현재 권한 레벨")
-                    style (Detail_M_Soft)
-                  }
-                  text {
-                    value ("L#{value(this.currentLevel)}")
-                    style (Title_L)
-                  }
+              single-line {
+                text {
+                  value ("🔒 온디바이스 4대 방어 시스템")
+                  style (Title_S)
                 }
               }
-              vbox {
-                content {
-                  text {
-                    value ("등급 명칭")
-                    style (Detail_M_Soft)
-                  }
-                  text {
-                    value ("#{value(this.levelTitle)}")
-                    style (Title_M)
-                  }
+              if (this.isBreakGlassActive) {
+                paragraph {
+                  value ("🚨 비상 Break-Glass 모드: 활성화 (감사 로그 기록 중)")
+                  style (Detail_L)
+                }
+              } else {
+                paragraph {
+                  value ("✅ 비상 Break-Glass 모드: 정상 보호 중 (비활성)")
+                  style (Detail_L)
                 }
               }
+              if (this.isLearningBlocked) {
+                paragraph {
+                  value ("🛑 AI 사생활 보호: 데이터 학습 차단 모드 활성")
+                  style (Detail_L)
+                }
+              } else {
+                paragraph {
+                  value ("🌱 AI 지능 발전: 온디바이스 로컬 학습 허용")
+                  style (Detail_L)
+                }
+              }
+              if (this.multiSigRequired) {
+                paragraph {
+                  value ("👥 보안 서명 정책: 다중 서명(Multi-Sig) 필수 요구")
+                  style (Detail_L)
+                }
+              } else {
+                paragraph {
+                  value ("👤 보안 서명 정책: 단일 서명(Single-Sig) 허용")
+                  style (Detail_L)
+                }
+              }
+              paragraph {
+                value ("🤝 등록된 신뢰인(Trustees): #{value(this.activeTrusteesCount)}명 인가됨")
+                style (Detail_L)
+              }
             }
-          }
-
-          paragraph {
-            value ("#{value(this.levelDescription)}")
-            style (Detail_L)
-          }
-
-          divider
-
-          // 세부 보안 상태 그리드
-          single-line {
-            text {
-              value ("🔒 핵심 보안 상태")
-              style (Title_S)
-            }
-          }
-
-          if (this.isBreakGlassActive) {
-            paragraph {
-              value ("🚨 비상 Break-Glass 모드: **활성화됨 (감사 로그 기록 중)**")
-              style (Detail_L)
-            }
-          } else {
-            paragraph {
-              value ("✅ 비상 Break-Glass 모드: **안정 상태 (비활성)**")
-              style (Detail_L)
-            }
-          }
-
-          if (this.isLearningBlocked) {
-            paragraph {
-              value ("🛑 AI 학습 차단(Privacy Mode): **차단 활성 (데이터 유출 방지)**")
-              style (Detail_L)
-            }
-          } else {
-            paragraph {
-              value ("🌱 AI 학습 허용: **정상 학습 중**")
-              style (Detail_L)
-            }
-          }
-
-          if (this.multiSigRequired) {
-            paragraph {
-              value ("👥 다중 서명(Multi-Sig): **필수 요구됨**")
-              style (Detail_L)
-            }
-          } else {
-            paragraph {
-              value ("👤 다중 서명: **단일 서명 허용**")
-              style (Detail_L)
-            }
-          }
-
-          paragraph {
-            value ("🤝 활성 신뢰인 수: **#{value(this.activeTrusteesCount)}명**")
-            style (Detail_L)
           }
         }
       }
+    }
+  }
+
+  conversation-drivers {
+    conversation-driver {
+      template ("판테온 상태 보여줘")
+    }
+    conversation-driver {
+      template ("세계수 성장 조회")
+    }
+    conversation-driver {
+      template ("거실 조명 켜기 실행해줘")
     }
   }
 }

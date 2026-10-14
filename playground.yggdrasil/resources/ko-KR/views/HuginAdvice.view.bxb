@@ -5,86 +5,94 @@ result-view {
     layout {
       section {
         content {
-          // 상단 브리핑 헤더
-          hbox {
+          // One UI 카드 1: 의도 및 최적 권고
+          compound-card {
             content {
-              vbox {
+              hbox {
                 content {
+                  vbox {
+                    content {
+                      text {
+                        value ("🦅 Hugin Strategic Intelligence")
+                        style (Title_S)
+                      }
+                      text {
+                        value ("주제: #{value(this.topic)} • 신뢰도: #{value(this.confidence)}%")
+                        style (Detail_M_Soft)
+                      }
+                    }
+                  }
+                }
+              }
+              divider
+              single-line {
+                text {
+                  value ("💡 후긴의 핵심 권고")
+                  style (Title_S)
+                }
+              }
+              paragraph {
+                value ("#{value(this.recommendation)}")
+                style (Title_M)
+              }
+              paragraph {
+                value ("의도 분석: #{value(this.intent)}")
+                style (Detail_M_Soft)
+              }
+            }
+          }
+
+          // One UI 카드 2: 수립된 행동 계획 (Action Plan)
+          if (exists(this.actionPlan)) {
+            compound-card {
+              content {
+                single-line {
                   text {
-                    value ("🦅 Hugin Strategic Intelligence")
+                    value ("📋 수립된 행동 계획")
                     style (Title_S)
                   }
-                  text {
-                    value ("주제: #{value(this.topic)} (신뢰도: #{value(this.confidence)}%)")
-                    style (Detail_M_Soft)
+                }
+                for-each (this.actionPlan) {
+                  as (plan) {
+                    paragraph {
+                      value ("• #{value(plan)}")
+                      style (Detail_L)
+                    }
                   }
                 }
               }
             }
           }
 
-          divider
-
-          // 분석된 의도
-          single-line {
-            text {
-              value ("🎯 파악된 의도")
-              style (Title_S)
-            }
-          }
-          paragraph {
-            value ("#{value(this.intent)}")
-            style (Detail_L)
-          }
-
-          divider
-
-          // 최적 권고 사항
-          single-line {
-            text {
-              value ("💡 휴긴의 맞춤 권고")
-              style (Title_S)
-            }
-          }
-          paragraph {
-            value ("#{value(this.recommendation)}")
-            style (Title_M)
-          }
-
-          divider
-
-          // 실행 계획 (Action Plan)
-          if (exists(this.actionPlan)) {
-            single-line {
-              text {
-                value ("📋 수립된 행동 계획")
-                style (Title_S)
-              }
-            }
-            for-each (this.actionPlan) {
-              as (plan) {
-                paragraph {
-                  value ("• #{value(plan)}")
-                  style (Detail_L)
+          // One UI 카드 3: 추론 사고 과정
+          compound-card {
+            content {
+              single-line {
+                text {
+                  value ("🧠 심층 추론 과정 (Thought Process)")
+                  style (Detail_M_Soft)
                 }
               }
+              paragraph {
+                value ("#{value(this.thoughtProcess)}")
+                style (Detail_M_Soft)
+              }
             }
-            divider
-          }
-
-          // 추론 과정
-          single-line {
-            text {
-              value ("🧠 심층 추론 과정")
-              style (Detail_M_Soft)
-            }
-          }
-          paragraph {
-            value ("#{value(this.thoughtProcess)}")
-            style (Detail_M_Soft)
           }
         }
       }
+    }
+  }
+
+  conversation-drivers {
+    conversation-driver {
+      template ("방금 말한 거 다시 설명해줘")
+    }
+    conversation-driver {
+      template ("거실 조명 켜기 실행해줘")
+    }
+    conversation-driver {
+      template ("판테온 상태 보여줘")
     }
   }
 }

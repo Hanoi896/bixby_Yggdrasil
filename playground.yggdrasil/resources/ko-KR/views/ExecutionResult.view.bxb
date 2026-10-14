@@ -5,88 +5,102 @@ result-view {
     layout {
       section {
         content {
-          // 상단 궁니르 실행 뱃지
-          hbox {
+          // One UI 카드 1: 궁니르 실행 상태 & 결과 메시지
+          compound-card {
             content {
-              vbox {
+              hbox {
                 content {
-                  text {
-                    value ("🔱 Gungnir Execution")
-                    style (Title_S)
-                  }
-                  text {
-                    value ("영역: #{value(this.realm)} • 요구 권한: L#{value(this.requiredLevel)}")
-                    style (Detail_M_Soft)
+                  vbox {
+                    content {
+                      text {
+                        value ("🔱 Gungnir Execution")
+                        style (Title_S)
+                      }
+                      text {
+                        value ("영역: #{value(this.realm)} • 요구 권한: Level #{value(this.requiredLevel)}")
+                        style (Detail_M_Soft)
+                      }
+                    }
                   }
                 }
               }
-            }
-          }
-
-          divider
-
-          // 성공 여부 및 실행 메시지
-          if (this.success) {
-            single-line {
-              text {
-                value ("✅ 실행 승인 및 완료")
-                style (Title_M)
+              divider
+              if (this.success) {
+                single-line {
+                  text {
+                    value ("✅ 실행 승인 및 완료")
+                    style (Title_M)
+                  }
+                }
+              } else {
+                single-line {
+                  text {
+                    value ("⛔ 실행 차단 (보안 거부)")
+                    style (Title_M)
+                  }
+                }
+              }
+              paragraph {
+                value ("#{value(this.message)}")
+                style (Detail_L)
               }
             }
-          } else {
-            single-line {
-              text {
-                value ("⛔ 실행 차단 (보안 거부)")
-                style (Title_M)
-              }
-            }
           }
 
-          paragraph {
-            value ("#{value(this.message)}")
-            style (Title_S)
-          }
-
-          divider
-
-          // 세부 실행 정보
-          hbox {
+          // One UI 카드 2: 세부 작업 및 서명 검증 정보
+          compound-card {
             content {
-              vbox {
+              hbox {
                 content {
-                  text {
-                    value ("작업 유형")
-                    style (Detail_M_Soft)
+                  vbox {
+                    content {
+                      text {
+                        value ("작업 유형")
+                        style (Detail_M_Soft)
+                      }
+                      text {
+                        value ("#{value(this.actionType)}")
+                        style (Detail_L)
+                      }
+                    }
                   }
-                  text {
-                    value ("#{value(this.actionType)}")
-                    style (Detail_L)
+                  vbox {
+                    content {
+                      text {
+                        value ("인가 요구 등급")
+                        style (Detail_M_Soft)
+                      }
+                      text {
+                        value ("Level #{value(this.requiredLevel)}")
+                        style (Detail_L)
+                      }
+                    }
                   }
                 }
               }
-              vbox {
-                content {
-                  text {
-                    value ("요구 보안 등급")
-                    style (Detail_M_Soft)
-                  }
-                  text {
-                    value ("L#{value(this.requiredLevel)}")
-                    style (Detail_L)
-                  }
+              divider
+              single-line {
+                text {
+                  value ("서명 해시 검증: #{value(this.signedHash)}")
+                  style (Legal)
                 }
               }
-            }
-          }
-
-          single-line {
-            text {
-              value ("서명 해시 검증: #{value(this.signedHash)}")
-              style (Detail_M_Soft)
             }
           }
         }
       }
+    }
+  }
+
+  conversation-drivers {
+    conversation-driver {
+      template ("보안 상태 점검해줘")
+    }
+    conversation-driver {
+      template ("판테온 상태 보여줘")
+    }
+    conversation-driver {
+      template ("세계수 상태 보여줘")
     }
   }
 }

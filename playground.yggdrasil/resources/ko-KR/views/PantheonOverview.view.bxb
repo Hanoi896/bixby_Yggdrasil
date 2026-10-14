@@ -5,68 +5,71 @@ result-view {
     layout {
       section {
         content {
-          // 상단 종합 상태
-          hbox {
+          // One UI 카드 1: 종합 판테온 관제 헤더
+          compound-card {
             content {
-              vbox {
-                content {
-                  text {
-                    value ("⚡ Yggdrasil Pantheon Overview")
-                    style (Title_S)
-                  }
-                  text {
-                    value ("종합 상태: #{value(this.overallStatus)} • 권한 레벨: #{value(this.securityLevel)}")
-                    style (Detail_M_Soft)
-                  }
-                }
-              }
-            }
-          }
-
-          divider
-
-          // 오딘의 감제 메시지
-          single-line {
-            text {
-              value ("👑 오딘 총괄 관제 브리핑")
-              style (Title_S)
-            }
-          }
-          paragraph {
-            value ("#{value(this.activeOdinMessage)}")
-            style (Detail_L)
-          }
-
-          divider
-
-          // 신격 6대 에이전트 티어 현황
-          single-line {
-            text {
-              value ("🏛️ 6대 신격 에이전트 현황")
-              style (Title_S)
-            }
-          }
-          for-each (this.tiers) {
-            as (tier) {
               hbox {
                 content {
                   vbox {
                     content {
                       text {
-                        value ("#{value(tier.name)} (#{value(tier.role)})")
+                        value ("⚡ Yggdrasil Pantheon Overview")
                         style (Title_S)
                       }
                       text {
-                        value ("영역: #{value(tier.realm)} | #{value(tier.description)}")
+                        value ("종합 상태: #{value(this.overallStatus)} • 보안 레벨: #{value(this.securityLevel)}")
                         style (Detail_M_Soft)
                       }
                     }
                   }
-                  vbox {
+                }
+              }
+              divider
+              single-line {
+                text {
+                  value ("👑 오딘 총괄 관제 브리핑")
+                  style (Title_S)
+                }
+              }
+              paragraph {
+                value ("#{value(this.activeOdinMessage)}")
+                style (Detail_L)
+              }
+            }
+          }
+
+          // One UI 카드 2: 6대 신격 에이전트 현황
+          compound-card {
+            content {
+              single-line {
+                text {
+                  value ("🏛️ 6대 신격 에이전트 현황")
+                  style (Title_S)
+                }
+              }
+              for-each (this.tiers) {
+                as (tier) {
+                  hbox {
                     content {
-                      text {
-                        value ("#{value(tier.status)}")
-                        style (Detail_L)
+                      vbox {
+                        content {
+                          text {
+                            value ("#{value(tier.name)} • #{value(tier.role)}")
+                            style (Title_S)
+                          }
+                          text {
+                            value ("영역: #{value(tier.realm)} | #{value(tier.description)}")
+                            style (Detail_M_Soft)
+                          }
+                        }
+                      }
+                      vbox {
+                        content {
+                          text {
+                            value ("#{value(tier.status)}")
+                            style (Detail_L)
+                          }
+                        }
                       }
                     }
                   }
@@ -75,32 +78,34 @@ result-view {
             }
           }
 
-          divider
-
-          // 9대 세계 영역 건전성 점수 요약
-          single-line {
-            text {
-              value ("🌍 9대 세계 격리 영역")
-              style (Title_S)
-            }
-          }
-          for-each (this.realms) {
-            as (realm) {
-              hbox {
-                content {
-                  vbox {
+          // One UI 카드 3: 9대 세계 격리 영역 요약
+          compound-card {
+            content {
+              single-line {
+                text {
+                  value ("🌍 9대 세계 격리 영역 보안 점수")
+                  style (Title_S)
+                }
+              }
+              for-each (this.realms) {
+                as (realm) {
+                  hbox {
                     content {
-                      text {
-                        value ("#{value(realm.name)} [#{value(realm.accessLevel)}]")
-                        style (Detail_L)
+                      vbox {
+                        content {
+                          text {
+                            value ("#{value(realm.name)} [#{value(realm.accessLevel)}]")
+                            style (Detail_L)
+                          }
+                        }
                       }
-                    }
-                  }
-                  vbox {
-                    content {
-                      text {
-                        value ("보안 점수: #{value(realm.healthScore)}점")
-                        style (Detail_M_Soft)
+                      vbox {
+                        content {
+                          text {
+                            value ("보안: #{value(realm.healthScore)}점")
+                            style (Detail_M_Soft)
+                          }
+                        }
                       }
                     }
                   }
@@ -110,6 +115,18 @@ result-view {
           }
         }
       }
+    }
+  }
+
+  conversation-drivers {
+    conversation-driver {
+      template ("보안 상태 점검해줘")
+    }
+    conversation-driver {
+      template ("세계수 성장 조회")
+    }
+    conversation-driver {
+      template ("오늘 일정 브리핑해줘")
     }
   }
 }

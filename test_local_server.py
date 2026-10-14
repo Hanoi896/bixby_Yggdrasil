@@ -22,6 +22,7 @@ import hashlib
 import json
 import time
 import sys
+import os
 
 # Windows 콘솔 인코딩 안전 처리
 if sys.platform == 'win32':
@@ -46,6 +47,69 @@ memory_store = [
     {"id": "mem-0001", "category": "Routine", "content": "평일 기상 시간은 오전 7시", "timestamp": "2026-10-13T07:00:00Z"},
     {"id": "mem-0002", "category": "Work", "content": "내일 오전 10시 디자인 회의", "timestamp": "2026-10-13T18:20:00Z"},
 ]
+
+# PART 6 보안 통제 상태 (Break-Glass 및 Multi-Sig)
+is_break_glass_active = False
+break_glass_reason = None
+multisig_sessions = {}
+
+# PART 7 온디바이스 프라이버시 & 시크릿 모드 (학습 잠시 끄는 버튼)
+is_incognito_active = False
+
+def check_sensitive_privacy_content(text):
+    """성생활/19금, 민감 의료, 개인 식별 키워드 자동 필터링"""
+    lower = text.lower()
+    sensitive_keywords = [
+        "성인용품", "성생활", "피임", "콘돔", "성관계", "자위", "야동", "포르노", "adult", "sex", "porn",
+        "비뇨기과", "산부인과", "정신과", "우울증", "성병", "임신", "낙태", "에이즈", "hiv",
+        "주민번호", "주민등록번호", "보안카드", "cvc"
+    ]
+    for kw in sensitive_keywords:
+        if kw in lower:
+            return True, kw
+    return False, None
+
+# PART 6 위변조 불가 SHA-256 감사 로그 해시 체인
+audit_hash_chain = []
+
+def init_genesis_block():
+    if not audit_hash_chain:
+        genesis_prev = "0" * 64
+        genesis_raw = f"0|2026-10-14T00:00:00Z|SYSTEM_GENESIS|L0|Asgard|Yggdrasil 보안 감사 로그 해시 체인 가동|{genesis_prev}|SUCCESS"
+        genesis_hash = hashlib.sha256(genesis_raw.encode('utf-8')).hexdigest()
+        audit_hash_chain.append({
+            "index": 0,
+            "timestamp": "2026-10-14T00:00:00Z",
+            "actionType": "SYSTEM_GENESIS",
+            "securityLevel": "L0",
+            "realm": "Asgard",
+            "details": "Yggdrasil 보안 감사 로그 해시 체인 가동",
+            "previousHash": genesis_prev,
+            "hash": genesis_hash,
+            "status": "SUCCESS"
+        })
+
+init_genesis_block()
+
+def append_audit_block(action_type, level, realm, details, status="SUCCESS"):
+    prev_hash = audit_hash_chain[-1]["hash"] if audit_hash_chain else "0" * 64
+    idx = len(audit_hash_chain)
+    ts = now_iso()
+    raw = f"{idx}|{ts}|{action_type}|{level}|{realm}|{details}|{prev_hash}|{status}"
+    cur_hash = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+    block = {
+        "index": idx,
+        "timestamp": ts,
+        "actionType": action_type,
+        "securityLevel": level,
+        "realm": realm,
+        "details": details,
+        "previousHash": prev_hash,
+        "hash": cur_hash,
+        "status": status
+    }
+    audit_hash_chain.append(block)
+    return block
 
 
 def now_iso():
@@ -98,6 +162,9 @@ class MockYggdrasilHandler(BaseHTTPRequestHandler):
             '/v1/yggdrasil/growth': self.handle_growth,
             '/v1/pantheon/overview': self.handle_pantheon,
             '/v1/security/status': self.handle_security,
+            '/v1/tools': self.handle_tools,
+            '/v1/audit/logs': self.handle_audit_logs,
+            '/v1/privacy/status': self.handle_privacy_status,
             '/v1/memory/records': lambda: self.handle_memory_query(parse_qs(parsed.query)),
         }
         handler = routes.get(parsed.path)
@@ -117,6 +184,9 @@ class MockYggdrasilHandler(BaseHTTPRequestHandler):
             '/v1/chat/completions': self.handle_chat,
             '/v1/memory/records': self.handle_memory_record,
             '/v1/gungnir/execute': self.handle_gungnir,
+            '/v1/security/break-glass': self.handle_break_glass,
+            '/v1/security/multisig/submit': self.handle_multisig_submit,
+            '/v1/privacy/toggle': self.handle_privacy_toggle,
         }
         handler = routes.get(path)
         if handler:
@@ -195,16 +265,130 @@ class MockYggdrasilHandler(BaseHTTPRequestHandler):
 
     def handle_security(self):
         self.send_json(200, {
-            "currentLevel": MOCK_CURRENT_LEVEL,
-            "isBreakGlassActive": False,
+            "currentLevel": 0 if is_break_glass_active else MOCK_CURRENT_LEVEL,
+            "isBreakGlassActive": is_break_glass_active,
+            "breakGlassReason": break_glass_reason,
             "isLearningBlocked": False,
-            "multiSigRequired": False,
-            "activeTrusteesCount": 1
+            "multiSigRequired": True,
+            "activeTrusteesCount": 3,
+            "multiSigThreshold": "2-of-3"
         })
+
+    def handle_audit_logs(self):
+        # 전체 해시 체인의 무결성 검증
+        integrity_ok = True
+        for i in range(1, len(audit_hash_chain)):
+            if audit_hash_chain[i]["previousHash"] != audit_hash_chain[i-1]["hash"]:
+                integrity_ok = False
+                break
+
+        self.send_json(200, {
+            "integrity": integrity_ok,
+            "totalBlocks": len(audit_hash_chain),
+            "latestBlockHash": audit_hash_chain[-1]["hash"] if audit_hash_chain else None,
+            "blocks": list(reversed(audit_hash_chain[-30:])) # 최신 30개 반환
+        })
+
+    def handle_break_glass(self, body):
+        global is_break_glass_active, break_glass_reason
+        action = str(body.get('action', 'trigger')).lower()
+        if action == 'trigger':
+            is_break_glass_active = True
+            break_glass_reason = str(body.get('reason', '웹 대시보드/사용자 원클릭 비상 차단'))
+            append_audit_block("BREAK_GLASS_TRIGGER", "L10", "Asgard", f"비상 차단 발동: {break_glass_reason}", status="BREAK_GLASS")
+            print(f"[BREAK-GLASS] 🚨 긴급 차단 발동! 이유: {break_glass_reason}")
+            self.send_json(200, {"success": True, "isBreakGlassActive": True, "message": "시스템 비상 차단 완료. 모든 실행 정지 (L0 강등)"})
+        elif action == 'release':
+            is_break_glass_active = False
+            break_glass_reason = None
+            append_audit_block("BREAK_GLASS_RELEASE", "L5", "Asgard", "비상 차단 정상 해제", status="SUCCESS")
+            print("[BREAK-GLASS] 🛡️ 비상 차단 해제됨. 정상 운영 복귀.")
+            self.send_json(200, {"success": True, "isBreakGlassActive": False, "message": "비상 차단이 성공적으로 해제되었습니다."})
+        else:
+            self.send_json(400, {"error": "invalid break glass action"})
+
+    def handle_multisig_submit(self, body):
+        session_id = body.get('sessionId', 'default-session')
+        trustee_id = body.get('trusteeId', 'trustee-01')
+        sig = body.get('signature', 'mock-ed25519-signature')
+
+        if session_id not in multisig_sessions:
+            multisig_sessions[session_id] = {"signatures": {}}
+
+        multisig_sessions[session_id]["signatures"][trustee_id] = sig
+        count = len(multisig_sessions[session_id]["signatures"])
+        approved = count >= 2
+
+        status_str = "APPROVED" if approved else "PENDING"
+        append_audit_block("MULTI_SIG_SUBMIT", "L8", "Nidavellir", f"신뢰인 {trustee_id} 서명 제출 (현재 {count}/2)", status=status_str)
+
+        self.send_json(200, {
+            "sessionId": session_id,
+            "trusteeId": trustee_id,
+            "currentSignaturesCount": count,
+            "requiredSignatures": 2,
+            "isApproved": approved,
+            "status": status_str
+        })
+
+    def handle_privacy_status(self):
+        self.send_json(200, {
+            "isIncognitoActive": is_incognito_active,
+            "mode": "시크릿 모드 (휘발성 처리, DB 저장 차단)" if is_incognito_active else "일반 모드 (개인화 학습 활성화)",
+            "sensitiveCategoriesBlocked": ["성생활/19금", "민감 의료/질병", "주민등록번호/금융"]
+        })
+
+    def handle_privacy_toggle(self, body):
+        global is_incognito_active
+        requested_state = body.get('incognito')
+        if requested_state is None:
+            is_incognito_active = not is_incognito_active
+        else:
+            is_incognito_active = bool(requested_state)
+
+        mode_str = "시크릿 모드 ON (학습 일시정지)" if is_incognito_active else "시크릿 모드 OFF (학습 재개)"
+        append_audit_block("PRIVACY_TOGGLE", "L2", "Midgard", f"프라이버시 모드 전환: {mode_str}", status="SUCCESS")
+        print(f"[PRIVACY] 🔒 {mode_str}")
+        self.send_json(200, {
+            "success": True,
+            "isIncognitoActive": is_incognito_active,
+            "message": f"성공적으로 {mode_str} 상태로 전환되었습니다."
+        })
+
+    def handle_tools(self):
+        schema_path = os.path.join(os.path.dirname(__file__), 'core', 'tools', 'tools_schema.json')
+        if os.path.exists(schema_path):
+            with open(schema_path, 'r', encoding='utf-8') as f:
+                self.send_json(200, json.load(f))
+        else:
+            self.send_json(404, {"error": "tools schema not found"})
 
     def handle_memory_record(self, body):
         content = str(body.get('content', '')).strip()
         if not content:
+            self.send_json(400, {"error": "content required"})
+            return
+
+        # 1. 시크릿 모드 활성화 시 기억 DB 저장 거부 (완전 휘발성 처리)
+        if is_incognito_active:
+            print(f"[PRIVACY] 🔒 시크릿 모드 동작 중: 기억 저장 거부 (휘발성 세션 유지) -> '{content[:20]}...'")
+            self.send_json(200, {
+                "id": "ephemeral-temp",
+                "status": "SKIPPED_DUE_TO_INCOGNITO",
+                "message": "시크릿 모드(학습 끄기) 활성화 중으로 DB에 저장되지 않고 휘발성 처리되었습니다."
+            })
+            return
+
+        # 2. 민감 카테고리(성생활, 의료, 주민번호) 자동 감지 시 저장 원천 차단
+        is_sensitive, keyword = check_sensitive_privacy_content(content)
+        if is_sensitive:
+            print(f"[PRIVACY] 🚨 민감 카테고리 감지('{keyword}'): 프라이버시 보호를 위해 DB 저장 원천 차단")
+            self.send_json(200, {
+                "id": "blocked-sensitive",
+                "status": "AUTO_EXCLUDED_FROM_LEARNING",
+                "message": f"민감 개인 프라이버시('{keyword}') 감지로 인해 학습 및 저장이 원천 차단되었습니다."
+            })
+            return
             self.send_json(400, {"error": "content required"})
             return
         record = {
@@ -233,8 +417,24 @@ class MockYggdrasilHandler(BaseHTTPRequestHandler):
     def handle_gungnir(self, body):
         action_type = str(body.get('actionType', '')).strip()
         required_level, realm = find_policy(action_type)
-        # 서버(Odin)가 현재 권한 레벨로 판정 - 클라이언트 requestedLevel 은 참고만 함
+
+        # Break-Glass 활성화 시 모든 궁니르 실행 강제 차단 (L0 강등)
+        if is_break_glass_active:
+            append_audit_block(action_type, f"L{required_level}", realm, f"Break-Glass 비상 차단으로 실행 거부: {action_type}", status="BLOCKED")
+            print(f"[GUNGNIR] 🚨 Break-Glass 발동 중: {action_type} 실행 차단")
+            self.send_json(200, {
+                "success": False,
+                "actionType": action_type,
+                "requiredLevel": required_level,
+                "realm": realm,
+                "message": "비상 방어(Break-Glass) 활성화 상태입니다. 모든 자율 실행이 즉시 차단되었습니다."
+            })
+            return
+
         allowed = MOCK_CURRENT_LEVEL >= required_level
+        status_str = "SUCCESS" if allowed else "BLOCKED"
+        append_audit_block(action_type, f"L{required_level}", realm, f"궁니르 작업 실행: {action_type}", status=status_str)
+
         result = {
             "success": allowed,
             "actionType": action_type,
