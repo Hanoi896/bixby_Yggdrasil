@@ -1,30 +1,38 @@
 import React, { useState } from 'react'
+import Chat from './pages/Chat'
 import Dashboard from './pages/Dashboard'
 import Devices from './pages/Devices'
 import AuditLog from './pages/AuditLog'
+import Settings from './pages/Settings'
 import { Menu } from 'lucide-react'
 import './index.css'
 
 function App() {
-    const [currentPage, setCurrentPage] = useState('dashboard')
+    const [currentPage, setCurrentPage] = useState('chat')
     const [sidebarOpen, setSidebarOpen] = useState(true)
 
     const navigation = [
+        { id: 'chat', name: '1:1 Chat', icon: '💬' },
         { id: 'dashboard', name: 'Dashboard', icon: '📊' },
         { id: 'devices', name: 'Devices', icon: '📱' },
         { id: 'audit', name: 'Audit Log', icon: '📋' },
+        { id: 'settings', name: 'Settings & Persona', icon: '⚙️' },
     ]
 
     const renderPage = () => {
         switch (currentPage) {
+            case 'chat':
+                return <Chat />
             case 'dashboard':
                 return <Dashboard />
             case 'devices':
                 return <Devices />
             case 'audit':
                 return <AuditLog />
+            case 'settings':
+                return <Settings />
             default:
-                return <Dashboard />
+                return <Chat />
         }
     }
 

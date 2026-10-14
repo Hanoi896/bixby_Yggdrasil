@@ -5,17 +5,17 @@ result-view {
     layout {
       section {
         content {
-          // 상단 상태 뱃지
+          // 상단 미니멀 브랜드 헤더
           hbox {
             content {
               vbox {
                 content {
                   text {
-                    value ("🦅 Hugin On-Device AI")
+                    value ("🦅 이그드라실 AI")
                     style (Title_S)
                   }
                   text {
-                    value ("EXAONE 3.0 2.4B • 100% 로컬 보안 연산")
+                    value ("100% 온디바이스 로컬 보안 연산")
                     style (Detail_M_Soft)
                   }
                 }
@@ -25,44 +25,36 @@ result-view {
 
           divider
 
-          // 사용자 발화
-          paragraph {
-            value ("**내 질문:** #{value(this.utterance)}")
-            style (Detail_L)
+          // 사용자 질문 (은은하게 Q 태그로 표시)
+          if (exists(this.utterance)) {
+            single-line {
+              text {
+                value ("Q. #{value(this.utterance)}")
+                style (Detail_M_Soft)
+              }
+            }
           }
 
-          // AI 응답 내용
+          // AI 메인 답변 (가독성 높은 본문 스타일)
           paragraph {
             value ("#{value(this.displayText)}")
             style (Title_M)
           }
 
-          divider
+          spacer
 
-          // 상세 실행 정보 카드
-          if (exists(this.thoughtProcess)) {
-            single-line {
-              text {
-                value ("**추론:** #{value(this.thoughtProcess)}")
-                style (Detail_M_Soft)
-              }
-            }
-          }
-
+          // 하단 심플 안심 태그 (추론/세션ID 등 지저분한 디버그 정보 완전 삭제, 초고속 속도만 미니멀 표시)
           if (exists(this.latencyMs)) {
-            single-line {
-              text {
-                value ("응답 속도: #{value(this.latencyMs)} ms")
-                style (Detail_M_Soft)
-              }
-            }
-          }
-
-          if (exists(this.sessionId)) {
-            single-line {
-              text {
-                value ("연속 대화 세션: #{value(this.sessionId)}")
-                style (Detail_M_Soft)
+            hbox {
+              content {
+                vbox {
+                  content {
+                    text {
+                      value ("⚡ 초고속 NPU 응답 (#{value(this.latencyMs)}ms)")
+                      style (Detail_M_Soft)
+                    }
+                  }
+                }
               }
             }
           }
@@ -71,16 +63,16 @@ result-view {
     }
   }
 
-  // 다음 질문을 유도하는 연속 대화 드라이버 버튼
+  // 실생활에서 바로 누르기 좋은 맞춤형 추천 발화 칩
   conversation-drivers {
     conversation-driver {
       template ("더 자세히 설명해줘")
     }
     conversation-driver {
-      template ("관련된 일정 찾아줘")
+      template ("오늘 주요 일정 알려줘")
     }
     conversation-driver {
-      template ("보안 상태 점검해줘")
+      template ("화면 정리하고 홈으로 가줘")
     }
   }
 }
