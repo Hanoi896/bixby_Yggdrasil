@@ -2,8 +2,44 @@ endpoints {
   action-endpoints {
     // 온디바이스 자율 대화 처리 엔드포인트
     action-endpoint (ProcessAutonomousDialogue) {
-      accepted-inputs (utterance)
+      accepted-inputs (utterance, sessionId)
       local-endpoint (ProcessAutonomousDialogue.js)
+    }
+
+    // Hugin 심층 자문 (구조화 브리핑)
+    action-endpoint (ConsultHugin) {
+      accepted-inputs (topic)
+      local-endpoint (ConsultHugin.js)
+    }
+
+    // Munin 기억 기록 / 검색
+    action-endpoint (RecordMemory) {
+      accepted-inputs (content, category)
+      local-endpoint (RecordMemory.js)
+    }
+    action-endpoint (QueryMemory) {
+      accepted-inputs (query)
+      local-endpoint (QueryMemory.js)
+    }
+
+    // 판테온 관제 / 세계수 성장 / 보안 점검 (입력 없음)
+    action-endpoint (GetPantheonOverview) {
+      accepted-inputs ()
+      local-endpoint (GetPantheonOverview.js)
+    }
+    action-endpoint (GetYggdrasilGrowth) {
+      accepted-inputs ()
+      local-endpoint (GetYggdrasilGrowth.js)
+    }
+    action-endpoint (InspectSecurity) {
+      accepted-inputs ()
+      local-endpoint (InspectSecurity.js)
+    }
+
+    // Gungnir 치명적 작업 실행 (권한 판정은 로컬 데몬 Odin 이 수행)
+    action-endpoint (ExecuteGungnirAction) {
+      accepted-inputs (actionType, requestedLevel)
+      local-endpoint (ExecuteGungnirAction.js)
     }
   }
 }

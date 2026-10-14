@@ -57,8 +57,30 @@ result-view {
               }
             }
           }
+
+          if (exists(this.sessionId)) {
+            single-line {
+              text {
+                value ("연속 대화 세션: #{value(this.sessionId)}")
+                style (Detail_M_Soft)
+              }
+            }
+          }
         }
       }
+    }
+  }
+
+  // 다음 질문을 유도하는 연속 대화 드라이버 버튼
+  conversation-drivers {
+    conversation-driver {
+      template ("더 자세히 설명해줘")
+    }
+    conversation-driver {
+      template ("관련된 일정 찾아줘")
+    }
+    conversation-driver {
+      template ("보안 상태 점검해줘")
     }
   }
 }

@@ -7,6 +7,10 @@ action (ProcessAutonomousDialogue) {
       type (UserUtterance)
       min (Required) max (One)
     }
+    input (sessionId) {
+      type (SessionId)
+      min (Optional) max (One)
+    }
   }
   
   output (AutonomousDialogueResult)

@@ -1,0 +1,92 @@
+result-view {
+  match: ExecutionResult (this)
+
+  render {
+    layout {
+      section {
+        content {
+          // 상단 궁니르 실행 뱃지
+          hbox {
+            content {
+              vbox {
+                content {
+                  text {
+                    value ("🔱 Gungnir Execution")
+                    style (Title_S)
+                  }
+                  text {
+                    value ("영역: #{value(this.realm)} • 요구 권한: L#{value(this.requiredLevel)}")
+                    style (Detail_M_Soft)
+                  }
+                }
+              }
+            }
+          }
+
+          divider
+
+          // 성공 여부 및 실행 메시지
+          if (this.success) {
+            single-line {
+              text {
+                value ("✅ 실행 승인 및 완료")
+                style (Title_M)
+              }
+            }
+          } else {
+            single-line {
+              text {
+                value ("⛔ 실행 차단 (보안 거부)")
+                style (Title_M)
+              }
+            }
+          }
+
+          paragraph {
+            value ("#{value(this.message)}")
+            style (Title_S)
+          }
+
+          divider
+
+          // 세부 실행 정보
+          hbox {
+            content {
+              vbox {
+                content {
+                  text {
+                    value ("작업 유형")
+                    style (Detail_M_Soft)
+                  }
+                  text {
+                    value ("#{value(this.actionType)}")
+                    style (Detail_L)
+                  }
+                }
+              }
+              vbox {
+                content {
+                  text {
+                    value ("요구 보안 등급")
+                    style (Detail_M_Soft)
+                  }
+                  text {
+                    value ("L#{value(this.requiredLevel)}")
+                    style (Detail_L)
+                  }
+                }
+              }
+            }
+          }
+
+          single-line {
+            text {
+              value ("서명 해시 검증: #{value(this.signedHash)}")
+              style (Detail_M_Soft)
+            }
+          }
+        }
+      }
+    }
+  }
+}

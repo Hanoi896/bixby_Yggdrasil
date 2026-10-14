@@ -16,9 +16,17 @@ Before writing or modifying any code, stop and evaluate the request against this
 
 ---
 
-## 2. Bixby Capsule Architecture & Folder Structure
-Always strictly adhere to the Bixby Developer Studio conventions:
+## 2. Defensive Development & Token Efficiency
+- **No Lazy Placeholders**: Never use comments like `// ... rest of implementation` or `/* unchanged code */`. Every written module must be complete, syntactically valid, and runnable.
+- **Diffs & Targeted Edits**: Never re-output or rewrite entire unmodified files. Only provide targeted replacements for affected blocks or functions.
+- **Surgical Reading**: Do not read complete files when only a specific function or block is being investigated.
+- **Dependency Freeze**: Do not install new third-party packages or modify dependency manifests without explicit approval.
+- **Scope Discipline**: Modify only files directly required for the current prompt. Do not reformat or clean up unrelated files.
 
+---
+
+## 3. Bixby Capsule Architecture & Folder Structure
+Always strictly adhere to the Bixby Developer Studio conventions:
 - `models/concepts/primitive/`: Primitive concepts (e.g., `text`, `integer`, `boolean`, `enum`).
 - `models/concepts/structures/`: Complex structure concepts containing multiple properties.
 - `models/actions/`: Action models defining inputs, outputs, and action types (`Search`, `Calculation`, `Fetch`, `BeginTransaction`, etc.).
@@ -32,7 +40,7 @@ Always strictly adhere to the Bixby Developer Studio conventions:
 
 ---
 
-## 3. Naming Conventions & Coding Standards
+## 4. Naming Conventions & Coding Standards
 - **Concept Names**: PascalCase (e.g., `UserLocation`, `SearchResult`).
 - **Action Names**: PascalCase, preferably starting with a verb (e.g., `GetWeatherInfo`, `SearchRestaurants`).
 - **Property/Variable Names**: camelCase (e.g., `userName`, `itemCount`).
@@ -43,21 +51,22 @@ Always strictly adhere to the Bixby Developer Studio conventions:
 
 ---
 
-## 4. Bixby-Specific Best Practices
+## 5. Bixby-Specific Best Practices
 - **No Direct UI Rendering in Logic**: Business logic (`code/*.js`) must only compute and return data concepts. All presentation logic must reside in Bixby Views (`.view.bxb`).
 - **Minimal Inputs**: Keep action inputs minimal to avoid prompting the user unnecessarily during voice execution.
 - **Strict Endpoint Mapping**: Whenever creating a new Action, immediately pair it with a corresponding entry in `endpoints.bxb` and create the Javascript handler file.
 
 ---
 
-## 5. Git & Workspace Hygiene
+## 6. Git & Workspace Hygiene
 - Do not commit local build artifacts, cache folders, or temporary files (`.bixby/`, `build/`, `node_modules/`, `.DS_Store`).
 - Follow conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `style:`).
 
-# 6. Language Rule
+---
+
+## 7. Language Rule
 - ALWAYS respond to the user in Korean (한국어), regardless of the language of the user's input, code, error logs, or documentation.
 - Applies to everything shown in chat: explanations, plans, task lists, walkthroughs, status updates, and questions.
 - Keep code, variable names, file paths, commands, and technical terms (e.g., API, endpoint, capsule) in their original English.
 - Code comments and commit messages follow the existing project convention. If none exists, write them in English.
 - Never switch to English unless the user explicitly asks for it.
-

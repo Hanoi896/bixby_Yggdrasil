@@ -1,0 +1,4 @@
+dialog (Result) {
+  match: YggdrasilGrowthStatus (this)
+  template ("세계수가 현재 #{value(this.koreanStageName)} 단계이며, 성장도는 #{value(this.growthPercent)}%입니다.")
+}

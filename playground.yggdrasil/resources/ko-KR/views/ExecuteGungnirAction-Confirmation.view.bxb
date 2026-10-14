@@ -1,0 +1,48 @@
+confirmation-view {
+  match {
+    Confirmation (this) {
+      confirming {
+        ExecuteGungnirAction (action)
+      }
+    }
+  }
+
+  message {
+    template ("🛡️ [오딘 보안 승인] '#{value(action.actionType)}' 작업을 실행하시겠습니까?")
+  }
+
+  mode (PositiveEmphasis)
+
+
+  render {
+    layout {
+      section {
+        content {
+          paragraph {
+            value ("🛡️ 오딘 최고 권한 승인 (Security Clearance)")
+            style (Title_M)
+          }
+          paragraph {
+            value ("요청 작업: #{value(action.actionType)}")
+            style (Detail_L)
+          }
+          if (exists(action.requestedLevel)) {
+            paragraph {
+              value ("보안 인가 등급: Level #{value(action.requestedLevel)}")
+              style (Detail_M_Soft)
+            }
+          }
+          divider
+          paragraph {
+            value ("⚠️ 본 작업은 원자적 트랜잭션 또는 외부 환경 변경을 유발하는 고위험 작업입니다.\n승인 시 오딘(Odin)의 온디바이스 전자서명(Ed25519)이 발급되며 궁니르(Gungnir) 실행 큐에 즉시 반영됩니다.")
+            style (Detail_M_Soft)
+          }
+          paragraph {
+            value ("음성으로 '예' 또는 '취소'를 말씀하시거나 아래 버튼을 눌러주세요.")
+            style (Legal)
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+dialog (Result) {
+  match: SecurityStatus (this)
+  template ("현재 보안 권한은 L#{value(this.currentLevel)} #{value(this.levelTitle)} 상태이며, 신뢰인은 #{value(this.activeTrusteesCount)}명 등록되어 있습니다.")
+}

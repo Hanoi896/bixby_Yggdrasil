@@ -1,0 +1,105 @@
+result-view {
+  match: YggdrasilGrowthStatus (this)
+
+  render {
+    layout {
+      section {
+        content {
+          // 상단 헤더 뱃지
+          hbox {
+            content {
+              vbox {
+                content {
+                  text {
+                    value ("🌳 Yggdrasil World Tree")
+                    style (Title_S)
+                  }
+                  text {
+                    value ("성장 단계: #{value(this.koreanStageName)} (#{value(this.stage)})")
+                    style (Detail_M_Soft)
+                  }
+                }
+              }
+            }
+          }
+
+          divider
+
+          // 성장도 및 지혜 포인트
+          hbox {
+            content {
+              vbox {
+                content {
+                  text {
+                    value ("성장 진행도")
+                    style (Detail_M_Soft)
+                  }
+                  text {
+                    value ("#{value(this.growthPercent)}%")
+                    style (Title_L)
+                  }
+                }
+              }
+              vbox {
+                content {
+                  text {
+                    value ("축적된 지혜")
+                    style (Detail_M_Soft)
+                  }
+                  text {
+                    value ("#{value(this.wisdomPoints)} WP")
+                    style (Title_L)
+                  }
+                }
+              }
+              vbox {
+                content {
+                  text {
+                    value ("수호 에이전트")
+                    style (Detail_M_Soft)
+                  }
+                  text {
+                    value ("#{value(this.guardianAgent)}")
+                    style (Title_M)
+                  }
+                }
+              }
+            }
+          }
+
+          divider
+
+          // 해금된 자율 능력 목록
+          single-line {
+            text {
+              value ("✨ 해금된 자율 능력")
+              style (Title_S)
+            }
+          }
+          for-each (this.unlockedAbilities) {
+            as (ability) {
+              paragraph {
+                value ("• #{value(ability)}")
+                style (Detail_L)
+              }
+            }
+          }
+
+          divider
+
+          // 다음 진화 조건
+          single-line {
+            text {
+              value ("🌱 다음 단계 진화 조건")
+              style (Title_S)
+            }
+          }
+          paragraph {
+            value ("#{value(this.nextStageRequirement)}")
+            style (Detail_M_Soft)
+          }
+        }
+      }
+    }
+  }
+}

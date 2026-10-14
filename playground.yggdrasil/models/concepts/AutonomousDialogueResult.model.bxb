@@ -41,4 +41,9 @@ structure (AutonomousDialogueResult) {
     type (LatencyMs)
     min (Optional) max (One)
   }
+
+  property (sessionId) {
+    type (SessionId)
+    min (Optional) max (One)
+  }
 }

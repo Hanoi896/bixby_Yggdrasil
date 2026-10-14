@@ -1,0 +1,90 @@
+result-view {
+  match: MemoryRecord (this)
+
+  render {
+    layout {
+      section {
+        content {
+          // 상단 뱃지
+          hbox {
+            content {
+              vbox {
+                content {
+                  text {
+                    value ("🦅 Munin Memory Storage")
+                    style (Title_S)
+                  }
+                  text {
+                    value ("Niflheim 암호화 기억 저장 완료")
+                    style (Detail_M_Soft)
+                  }
+                }
+              }
+            }
+          }
+
+          divider
+
+          // 기록 내용
+          paragraph {
+            value ("**기록 내용:** #{value(this.content)}")
+            style (Title_M)
+          }
+
+          divider
+
+          // 메타데이터
+          hbox {
+            content {
+              vbox {
+                content {
+                  text {
+                    value ("카테고리")
+                    style (Detail_M_Soft)
+                  }
+                  text {
+                    value ("#{value(this.category)}")
+                    style (Detail_L)
+                  }
+                }
+              }
+              vbox {
+                content {
+                  text {
+                    value ("암호화 여부")
+                    style (Detail_M_Soft)
+                  }
+                  if (this.isEncrypted) {
+                    text {
+                      value ("🔒 SQLCipher 암호화")
+                      style (Detail_L)
+                    }
+                  } else {
+                    text {
+                      value ("일반 평문")
+                      style (Detail_L)
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          single-line {
+            text {
+              value ("레코드 ID: #{value(this.id)}")
+              style (Detail_M_Soft)
+            }
+          }
+
+          single-line {
+            text {
+              value ("서명 검증: #{value(this.signatureHash)}")
+              style (Detail_M_Soft)
+            }
+          }
+        }
+      }
+    }
+  }
+}
