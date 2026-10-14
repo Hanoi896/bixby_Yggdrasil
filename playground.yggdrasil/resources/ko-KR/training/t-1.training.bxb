@@ -753,3 +753,33 @@ train (t-1791966000126) {
   plan (Y)
   last-modified (1791966048141)
 }
+
+train (t-1791966000127) {
+  utterance ([g:LaunchApp] 이그드라실 열어줘)
+  plan (Y)
+  last-modified (1791966048151)
+}
+
+train (t-1791966000128) {
+  utterance ([g:LaunchApp] 이그드라실 시작해줘)
+  plan (Y)
+  last-modified (1791966048161)
+}
+
+train (t-1791966000129) {
+  utterance ([g:LaunchApp] 이그드라실 실행해줘)
+  plan (Y)
+  last-modified (1791966048171)
+}
+
+train (t-1791966000130) {
+  utterance ([g:LaunchApp] 이그드라실 앱 켜줘)
+  plan (Y)
+  last-modified (1791966048181)
+}
+
+train (t-1791966000131) {
+  utterance ([g:LaunchApp] 이그드라실 켜줘)
+  plan (Y)
+  last-modified (1791966048191)
+}

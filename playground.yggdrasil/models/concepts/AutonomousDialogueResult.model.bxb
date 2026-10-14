@@ -46,4 +46,9 @@ structure (AutonomousDialogueResult) {
     type (SessionId)
     min (Optional) max (One)
   }
+
+  property (appLaunchUri) {
+    type (AppLaunchUri)
+    min (Optional) max (One)
+  }
 }

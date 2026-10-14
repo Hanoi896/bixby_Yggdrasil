@@ -1,0 +1,18 @@
+﻿structure (AppLaunchResult) {
+  description (이그드라실 네이티브 앱 실행 결과)
+
+  property (launchUri) {
+    type (AppLaunchUri)
+    min (Required) max (One)
+  }
+
+  property (displayText) {
+    type (DisplayText)
+    min (Required) max (One)
+  }
+
+  property (speechResponse) {
+    type (SpeechResponse)
+    min (Required) max (One)
+  }
+}

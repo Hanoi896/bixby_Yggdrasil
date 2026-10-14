@@ -1,0 +1,64 @@
+﻿result-view {
+  match: AppLaunchResult (this)
+
+  message {
+    template ("#{value(this.speechResponse)}")
+  }
+
+  app-launch {
+    payload-uri ("#{value(this.launchUri)}")
+  }
+
+  render {
+    layout {
+      section {
+        content {
+          hbox {
+            content {
+              vbox {
+                content {
+                  text {
+                    value ("🦅 이그드라실 앱 실행")
+                    style (Title_S)
+                  }
+                  text {
+                    value ("온디바이스 EXAONE 3.0 NPU 엔진")
+                    style (Detail_M_Soft)
+                  }
+                }
+              }
+            }
+          }
+
+          divider
+
+          paragraph {
+            value ("#{value(this.displayText)}")
+            style (Title_M)
+          }
+
+          spacer
+
+          attribution-link {
+            label {
+              template ("🦅 이그드라실 앱 열기")
+            }
+            url ("#{value(this.launchUri)}")
+          }
+        }
+      }
+    }
+  }
+
+  conversation-drivers {
+    conversation-driver {
+      template ("오늘 주요 일정 알려줘")
+    }
+    conversation-driver {
+      template ("배터리 절전 모드 켜줘")
+    }
+    conversation-driver {
+      template ("화면 정리하고 홈으로 가줘")
+    }
+  }
+}

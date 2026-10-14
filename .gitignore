@@ -3,7 +3,7 @@
 *.bin
 *.onnx
 models/*.gguf
-core/android/src/main/assets/models/*.gguf
+core/android/app/src/main/assets/models/*.gguf
 
 # Build & Temporary Files
 __pycache__/

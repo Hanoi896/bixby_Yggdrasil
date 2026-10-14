@@ -6,6 +6,12 @@ endpoints {
       local-endpoint (ProcessAutonomousDialogue.js)
     }
 
+    // 이그드라실 네이티브 앱 실행 엔드포인트
+    action-endpoint (LaunchApp) {
+      accepted-inputs ()
+      local-endpoint (LaunchApp.js)
+    }
+
     // Hugin 심층 자문 (구조화 브리핑)
     action-endpoint (ConsultHugin) {
       accepted-inputs (topic)

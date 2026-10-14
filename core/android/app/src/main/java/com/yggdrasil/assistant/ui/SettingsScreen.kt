@@ -1,0 +1,597 @@
+package com.yggdrasil.assistant.ui
+
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.yggdrasil.assistant.permission.AppPermissionManager
+import com.yggdrasil.assistant.persona.UserPersonaManager
+import com.yggdrasil.assistant.persona.UserPersonaManager.SpeechTone
+import com.yggdrasil.assistant.proactive.ProactiveRoutineManager
+import com.yggdrasil.assistant.storage.AppStorageVaultManager
+import com.yggdrasil.assistant.storage.ModelAutoSyncManager
+import kotlinx.coroutines.launch
+
+/**
+ * [SettingsScreen] - Black & White 극도의 미니멀리즘 디자인
+ * 갤럭시 S26 Ultra의 AMOLED 디스플레이에 최적화된 Pure Black & Crisp White 테마.
+ * 1. 시스템 필수 권한 관리 허브 (접근성, 알림, 캘린더 등 원클릭 허용)
+ * 2. 내 맞춤 페르소나 (호칭, AI 이름, 말투)
+ * 3. 선제적 능동 비서 On/Off 및 세부 루틴
+ * 4. 프라이버시 쉴드 (시크릿 모드)
+ * 5. 격리 스토리지 볼트 & AI 모델 관리 (SAF 파일 선택기 / 앱 전용 폴더 동기화)
+ * 6. 긴급 비상 차단 (Break-Glass)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    personaManager: UserPersonaManager,
+    proactiveManager: ProactiveRoutineManager,
+    vaultManager: AppStorageVaultManager,
+    onEmergencyLockdown: () -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
+    val permissionManager = remember { AppPermissionManager.getInstance(context) }
+    var permissions by remember { mutableStateOf(permissionManager.checkAllPermissions()) }
+
+    // 페르소나 상태
+    val profile = remember { personaManager.getProfile() }
+    var userCallName by remember { mutableStateOf(profile.userCallName) }
+    var aiName by remember { mutableStateOf(profile.aiName) }
+    var selectedTone by remember { mutableStateOf(profile.tone) }
+
+    // 능동 비서 상태
+    val proactiveConfig = remember { proactiveManager.getConfig() }
+    var isProactiveMaster by remember { mutableStateOf(proactiveConfig.isMasterEnabled) }
+    var enableMorning by remember { mutableStateOf(proactiveConfig.enableMorningBriefing) }
+    var enableBatteryCare by remember { mutableStateOf(proactiveConfig.enableLowBatteryCare) }
+    var enableCommute by remember { mutableStateOf(proactiveConfig.enableCommuteRoutine) }
+
+    // 프라이버시 상태
+    var isLearningPaused by remember { mutableStateOf(false) }
+
+    // 스토리지 및 모델 관리 상태
+    val modelSyncManager = remember { ModelAutoSyncManager.getInstance(context) }
+    var modelStatus by remember { mutableStateOf(modelSyncManager.getStatus()) }
+    var storageSummary by remember { mutableStateOf(vaultManager.getStorageUsageSummary()) }
+    var isCleaned by remember { mutableStateOf(false) }
+    var isImporting by remember { mutableStateOf(false) }
+    var importProgress by remember { mutableStateOf<Int?>(null) }
+    var importFeedbackMessage by remember { mutableStateOf<String?>(null) }
+
+    // SAF 시스템 파일 선택기 런처
+    val safPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isImporting = true
+            importProgress = 0
+            importFeedbackMessage = "SAF 스트림을 통해 내부 볼트로 안전 복사 중..."
+            coroutineScope.launch {
+                val ok = modelSyncManager.importModelFromUri(uri) { percent ->
+                    importProgress = percent
+                }
+                isImporting = false
+                importProgress = null
+                modelStatus = modelSyncManager.getStatus()
+                storageSummary = vaultManager.getStorageUsageSummary()
+                importFeedbackMessage = if (ok) {
+                    "🎉 SAF 모델 가져오기 성공! 즉시 온디바이스 NPU 추론에 활성화되었습니다."
+                } else {
+                    "🚨 모델 가져오기 실패: GGUF 형식 또는 파일 크기(500MB 이상)를 확인하세요."
+                }
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "설정",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = Color.White
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF000000),
+                    titleContentColor = Color.White
+                )
+            )
+        },
+        containerColor = Color(0xFF000000)
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(scrollState)
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // [카드 1] 필수 시스템 권한 상태 (핵심 신규 추가)
+            MonoCard(title = "스마트폰 필수 권한 상태") {
+                Text(
+                    "화면 자동 조작과 일정/알림 연동에 필요한 권한들입니다.",
+                    color = Color(0xFF888888),
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                permissions.forEach { perm ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    perm.name,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 13.sp
+                                )
+                                if (perm.isCritical) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "필수",
+                                        color = Color.Black,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .background(Color.White, RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                perm.description,
+                                color = Color(0xFF777777),
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
+
+                        if (perm.isGranted) {
+                            Text(
+                                "허용됨",
+                                color = Color(0xFFAAAAAA),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color.White, RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        val intent = permissionManager.createSettingIntent(perm)
+                                        context.startActivity(intent)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    "설정하기",
+                                    color = Color.Black,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                    Divider(color = Color(0xFF1A1A1A), modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
+
+            // [카드 2] 내 맞춤 페르소나
+            MonoCard(title = "내 맞춤 페르소나") {
+                OutlinedTextField(
+                    value = userCallName,
+                    onValueChange = {
+                        userCallName = it
+                        personaManager.completeOnboarding(it, aiName, selectedTone)
+                    },
+                    label = { Text("호칭 (예: 지훈이 형, 대표님)", color = Color(0xFF888888)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color(0xFF333333),
+                        cursorColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = aiName,
+                    onValueChange = {
+                        aiName = it
+                        personaManager.completeOnboarding(userCallName, it, selectedTone)
+                    },
+                    label = { Text("AI 이름 (기본: 이그드라실)", color = Color(0xFF888888)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color(0xFF333333),
+                        cursorColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Text("대화 말투", color = Color(0xFF888888), fontSize = 12.sp)
+
+                Column(modifier = Modifier.padding(top = 4.dp)) {
+                    SpeechTone.values().forEach { tone ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedTone = tone
+                                    personaManager.completeOnboarding(userCallName, aiName, tone)
+                                }
+                                .padding(vertical = 6.dp)
+                        ) {
+                            RadioButton(
+                                selected = (selectedTone == tone),
+                                onClick = {
+                                    selectedTone = tone
+                                    personaManager.completeOnboarding(userCallName, aiName, tone)
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = Color.White,
+                                    unselectedColor = Color(0xFF555555)
+                                )
+                            )
+                            Column(modifier = Modifier.padding(start = 6.dp)) {
+                                Text(tone.displayName, color = Color.White, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                Text(tone.description, color = Color(0xFF777777), fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // [카드 3] 선제적 능동 비서
+            MonoCard(title = "선제적 능동 비서") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("능동 비서 마스터 스위치", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        Text("먼저 상황을 인지해 말 걸기", color = Color(0xFF777777), fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = isProactiveMaster,
+                        onCheckedChange = {
+                            isProactiveMaster = it
+                            proactiveManager.setMasterEnabled(it)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = Color.White,
+                            uncheckedThumbColor = Color(0xFF888888),
+                            uncheckedTrackColor = Color(0xFF222222)
+                        )
+                    )
+                }
+
+                if (isProactiveMaster) {
+                    Divider(color = Color(0xFF1A1A1A), modifier = Modifier.padding(vertical = 8.dp))
+
+                    MonoToggleItem("기상 모닝 브리핑", "아침 알람 해제 시 오늘 일정 요약", enableMorning) {
+                        enableMorning = it
+                        proactiveManager.updateRoutineSettings(enableMorningBriefing = it)
+                    }
+
+                    MonoToggleItem("배터리 긴급 케어", "15% 이하 시 절전 및 백그라운드 정리 제안", enableBatteryCare) {
+                        enableBatteryCare = it
+                        proactiveManager.updateRoutineSettings(enableLowBatteryCare = it)
+                    }
+
+                    MonoToggleItem("퇴근/귀가 스마트홈 루틴", "귀가 시 조명 및 에어컨 가동 제안", enableCommute) {
+                        enableCommute = it
+                        proactiveManager.updateRoutineSettings(enableCommuteRoutine = it)
+                    }
+                }
+            }
+
+            // [카드 4] 온디바이스 프라이버시
+            MonoCard(title = "온디바이스 프라이버시") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("학습 잠시 끄기 (시크릿 모드)", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        Text("대화 내용 DB 저장 및 RAG 학습 0% 차단", color = Color(0xFF777777), fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = isLearningPaused,
+                        onCheckedChange = { isLearningPaused = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = Color.White,
+                            uncheckedThumbColor = Color(0xFF888888),
+                            uncheckedTrackColor = Color(0xFF222222)
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "• 성생활/의료/금융 정보는 스위치 상태와 무관하게 24시간 자동 격리 차단됩니다.",
+                    color = Color(0xFF999999),
+                    fontSize = 11.sp
+                )
+            }
+
+            // [카드 5] 온디바이스 AI 모델 및 격리 볼트 관리
+            MonoCard(title = "온디바이스 AI 모델 & 스토리지 볼트") {
+                // 1. 현재 탑재된 모델 상태 요약
+                Text(
+                    "• AI 가중치: ${if (modelStatus.isModelReady) "${modelStatus.activeModelName} (${String.format(java.util.Locale.US, "%.2f", modelStatus.activeModelSizeBytes / (1024.0 * 1024.0 * 1024.0))} GB)" else "미탑재 (가져오기 필요)"}\n" +
+                    "• 안전 롤백 슬롯: ${if (modelStatus.hasStableBackup) "보관 중 (${modelStatus.backupSizeBytes / (1024 * 1024)} MB)" else "없음"}\n" +
+                    "• 암호화 DB: ${(storageSummary["vault_bytes"] ?: 0) / 1024} KB\n" +
+                    "• 화면 캡처 캐시: ${if (isCleaned) "0" else (storageSummary["screenshot_cache_bytes"] ?: 0) / 1024} KB\n" +
+                    "• 임시 아카이브 캐시: ${if (isCleaned) "0" else (storageSummary["archive_cache_bytes"] ?: 0) / 1024} KB",
+                    color = Color(0xFFCCCCCC),
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 가져오기 진행률 표시
+                if (isImporting && importProgress != null) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("모델 볼트 복사 중...", color = Color.White, fontSize = 11.sp)
+                            Text("$importProgress%", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { (importProgress ?: 0) / 100f },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                            color = Color.White,
+                            trackColor = Color(0xFF333333)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // 피드백 메시지
+                importFeedbackMessage?.let { msg ->
+                    Text(
+                        msg,
+                        color = if (msg.contains("성공") || msg.contains("승격 완료")) Color(0xFF88FF88) else Color(0xFFFFBB77),
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF141414), RoundedCornerShape(6.dp))
+                            .border(1.dp, Color(0xFF2E2E2E), RoundedCornerShape(6.dp))
+                            .padding(8.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // 방식 1: SAF 시스템 파일 선택기
+                Button(
+                    onClick = {
+                        safPickerLauncher.launch(arrayOf("*/*"))
+                    },
+                    enabled = !isImporting,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        "📂 파일 선택기로 모델 가져오기 (SAF)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // 방식 2: 앱 전용 외부 폴더 원터치 동기화
+                Button(
+                    onClick = {
+                        isImporting = true
+                        importFeedbackMessage = "앱 전용 외부 폴더 점검 중..."
+                        coroutineScope.launch {
+                            val ok = modelSyncManager.importFromAppSpecificFolder()
+                            isImporting = false
+                            modelStatus = modelSyncManager.getStatus()
+                            storageSummary = vaultManager.getStorageUsageSummary()
+                            importFeedbackMessage = if (ok) {
+                                "✅ 앱 전용 폴더에서 모델 승격 완료! (0.1초 완료)"
+                            } else {
+                                "ℹ️ 앱 전용 폴더에 .gguf 파일이 없습니다.\n경로: /Android/data/com.yggdrasil.assistant/files/models/"
+                            }
+                        }
+                    },
+                    enabled = !isImporting,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1C1C1C),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
+                ) {
+                    Text(
+                        "📥 앱 전용 폴더에서 즉시 등록 (ADB/파일앱)",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // 긴급 롤백 버튼
+                Button(
+                    onClick = {
+                        val ok = modelSyncManager.rollbackToStableBackup()
+                        modelStatus = modelSyncManager.getStatus()
+                        importFeedbackMessage = if (ok) "이전 안정 모델로 0.1초 롤백 완료!" else "보관된 이전 백업 모델이 없습니다."
+                    },
+                    enabled = !isImporting,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF121212),
+                        contentColor = Color.LightGray
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2A2A2A))
+                ) {
+                    Text(
+                        "신버전 오류 시 ➔ 이전 안정 모델로 롤백 (0.1초)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // 임시 캐시 정리 버튼
+                OutlinedButton(
+                    onClick = {
+                        vaultManager.runGarbageCollection()
+                        isCleaned = true
+                        storageSummary = vaultManager.getStorageUsageSummary()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color(0xFFAAAAAA)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF222222))
+                ) {
+                    Text(
+                        if (isCleaned) "만료 임시 캐시 정리 완료" else "만료된 화면캡처/아카이브 캐시 비우기",
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            // [카드 6] 비상 방어 프로토콜
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0xFF444444), RoundedCornerShape(12.dp))
+                    .background(Color(0xFF0A0A0A), RoundedCornerShape(12.dp))
+                    .padding(16.dp)
+            ) {
+                Column {
+                    Text("비상 방어 프로토콜 (Break-Glass)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        "이상 감지 시 모든 권한을 즉시 차단하고 읽기 전용 L0 상태로 잠급니다.",
+                        color = Color(0xFF777777),
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = onEmergencyLockdown,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1E1E1E),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF555555))
+                    ) {
+                        Text("긴급 시스템 차단 실행", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+fun MonoCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF222222), RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D0D))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Spacer(modifier = Modifier.height(10.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+fun MonoToggleItem(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = Color(0xFF777777), fontSize = 11.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.Black,
+                checkedTrackColor = Color.White,
+                uncheckedThumbColor = Color(0xFF888888),
+                uncheckedTrackColor = Color(0xFF222222)
+            )
+        )
+    }
+}

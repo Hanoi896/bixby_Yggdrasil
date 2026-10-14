@@ -1,6 +1,14 @@
 result-view {
   match: AutonomousDialogueResult (this)
 
+  message {
+    template ("#{value(this.speechResponse)}")
+  }
+
+  app-launch {
+    payload-uri ("#{value(this.appLaunchUri)}")
+  }
+
   render {
     layout {
       section {
@@ -11,11 +19,11 @@ result-view {
               vbox {
                 content {
                   text {
-                    value ("🦅 이그드라실 AI")
+                    value ("🦅 이그드라실 AI (온디바이스)")
                     style (Title_S)
                   }
                   text {
-                    value ("100% 온디바이스 로컬 보안 연산")
+                    value ("100% 온디바이스 로컬 NPU 보안 연산")
                     style (Detail_M_Soft)
                   }
                 }
@@ -25,7 +33,7 @@ result-view {
 
           divider
 
-          // 사용자 질문 (은은하게 Q 태그로 표시)
+          // 사용자 질문 (Q 태그)
           if (exists(this.utterance)) {
             single-line {
               text {
@@ -35,7 +43,7 @@ result-view {
             }
           }
 
-          // AI 메인 답변 (가독성 높은 본문 스타일)
+          // 상태 및 안내 본문
           paragraph {
             value ("#{value(this.displayText)}")
             style (Title_M)
@@ -43,14 +51,24 @@ result-view {
 
           spacer
 
-          // 하단 심플 안심 태그 (추론/세션ID 등 지저분한 디버그 정보 완전 삭제, 초고속 속도만 미니멀 표시)
+          // 앱 즉시 이동 버튼 (원클릭 링크)
+          if (exists(this.appLaunchUri)) {
+            attribution-link {
+              label {
+                template ("🦅 이그드라실 앱에서 대화 열기")
+              }
+              url ("#{value(this.appLaunchUri)}")
+            }
+          }
+
+          // 초고속 NPU 응답 안내
           if (exists(this.latencyMs)) {
             hbox {
               content {
                 vbox {
                   content {
                     text {
-                      value ("⚡ 초고속 NPU 응답 (#{value(this.latencyMs)}ms)")
+                      value ("⚡ 초고속 온디바이스 핸드오프 (#{value(this.latencyMs)}ms)")
                       style (Detail_M_Soft)
                     }
                   }
@@ -63,16 +81,16 @@ result-view {
     }
   }
 
-  // 실생활에서 바로 누르기 좋은 맞춤형 추천 발화 칩
+  // 후속 추천 발화 칩
   conversation-drivers {
     conversation-driver {
-      template ("더 자세히 설명해줘")
+      template ("이그드라실 앱 열어줘")
     }
     conversation-driver {
       template ("오늘 주요 일정 알려줘")
     }
     conversation-driver {
-      template ("화면 정리하고 홈으로 가줘")
+      template ("배터리 절전 모드 켜줘")
     }
   }
 }
