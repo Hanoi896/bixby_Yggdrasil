@@ -1,6 +1,6 @@
 /**
  * @file YggdrasilConstants.js
- * @description Yggdrasil 도메인 상수 (temp_yggdrasil/README.md 의 판테온·9대 영역·성장 단계 정의와 일치)
+ * @description Yggdrasil 도메인 상수 (BluePrint/06_구현_로드맵/아카이브/초기_README.md 의 판테온·9대 영역·성장 단계 정의와 일치)
  */
 
 /** 세계수 성장 단계 */
