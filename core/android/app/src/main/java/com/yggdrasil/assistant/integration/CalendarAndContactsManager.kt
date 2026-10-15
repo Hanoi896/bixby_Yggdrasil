@@ -17,6 +17,17 @@ import java.util.TimeZone
  */
 class CalendarAndContactsManager(private val context: Context) {
 
+    companion object {
+        @Volatile
+        private var instance: CalendarAndContactsManager? = null
+
+        fun getInstance(context: Context): CalendarAndContactsManager {
+            return instance ?: synchronized(this) {
+                instance ?: CalendarAndContactsManager(context.applicationContext).also { instance = it }
+            }
+        }
+    }
+
     data class CalendarEvent(
         val id: Long,
         val title: String,
@@ -34,6 +45,41 @@ class CalendarAndContactsManager(private val context: Context) {
     // ==========================================
     // 1. 구글 캘린더 (CalendarContract) 연동
     // ==========================================
+
+    /**
+     * 오늘 00:00부터 23:59:59까지의 실제 구글/삼성 캘린더 일정 목록 조회
+     */
+    fun getTodayEvents(): List<CalendarEvent> {
+        val calendar = java.util.Calendar.getInstance()
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        calendar.set(java.util.Calendar.MINUTE, 0)
+        calendar.set(java.util.Calendar.SECOND, 0)
+        calendar.set(java.util.Calendar.MILLISECOND, 0)
+        val startOfDay = calendar.timeInMillis
+
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 23)
+        calendar.set(java.util.Calendar.MINUTE, 59)
+        calendar.set(java.util.Calendar.SECOND, 59)
+        calendar.set(java.util.Calendar.MILLISECOND, 999)
+        val endOfDay = calendar.timeInMillis
+
+        return queryEvents(startOfDay, endOfDay)
+    }
+
+    /**
+     * 일정 목록을 사용자 친화적 문자열 포맷(예: "오후 2:00 주간 회의 (회의실 A)")으로 변환
+     */
+    fun formatEventsForBriefing(events: List<CalendarEvent>): List<String> {
+        val timeFormat = java.text.SimpleDateFormat("a h:mm", java.util.Locale.KOREAN)
+        return events.map { event ->
+            val timeStr = timeFormat.format(java.util.Date(event.startTimeMillis))
+            if (event.location.isNotBlank()) {
+                "$timeStr ${event.title} (${event.location})"
+            } else {
+                "$timeStr ${event.title}"
+            }
+        }
+    }
 
     /**
      * 특정 시간 범위 내의 구글 캘린더 일정 목록 조회

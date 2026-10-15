@@ -82,7 +82,8 @@ function normalizeAdvice(data, topic) {
     intent: toText(data.intent, '일반 문의', 100),
     thoughtProcess: toText(data.thoughtProcess, '추론 과정 정보 없음', 500),
     recommendation: toText(data.recommendation, '권고 사항이 생성되지 않았습니다.', 500),
-    confidence: toInt(data.confidence, 0, MAX_CONFIDENCE, 0)
+    confidence: toInt(data.confidence, 0, MAX_CONFIDENCE, 0),
+    appLaunchUri: 'yggdrasil://chat?query=' + encodeURIComponent(topic || '')
   };
   if (plans.length > 0) advice.actionPlan = plans;
   return advice;
@@ -94,7 +95,8 @@ function buildRawTextAdvice(text, topic) {
     intent: '일반 문의',
     thoughtProcess: '구조화 응답 파싱 실패 - LLM 원문 응답을 사용합니다.',
     recommendation: toText(text, '응답 없음', 500),
-    confidence: RAW_TEXT_CONFIDENCE
+    confidence: RAW_TEXT_CONFIDENCE,
+    appLaunchUri: 'yggdrasil://chat?query=' + encodeURIComponent(topic || '')
   };
 }
 
@@ -104,6 +106,7 @@ function buildOfflineAdvice(topic) {
     intent: '오프라인',
     thoughtProcess: '로컬 LLM 서버(127.0.0.1:8080)에 연결할 수 없습니다.',
     recommendation: '온디바이스 EXAONE 데몬을 실행한 뒤 다시 휴긴에게 물어봐 주세요.',
-    confidence: 0
+    confidence: 0,
+    appLaunchUri: 'yggdrasil://chat?query=' + encodeURIComponent(topic || '')
   };
 }

@@ -28,7 +28,8 @@ function normalizeOverview(data) {
     // tiers/realms 는 Required(Many) 이므로 비어 있으면 기본 정의로 대체
     tiers: tiers.length > 0 ? tiers : buildDefaultTiers(OFFLINE_STATUS),
     realms: realms.length > 0 ? realms : buildDefaultRealms(),
-    activeOdinMessage: toText(data.activeOdinMessage, '오딘의 메시지가 없습니다.', 300)
+    activeOdinMessage: toText(data.activeOdinMessage, '오딘의 메시지가 없습니다.', 300),
+    appLaunchUri: 'yggdrasil://status'
   };
 }
 
@@ -110,6 +111,7 @@ function buildOfflineOverview() {
     securityLevel: 'Unknown',
     tiers: buildDefaultTiers(OFFLINE_STATUS),
     realms: buildDefaultRealms(),
-    activeOdinMessage: '로컬 Yggdrasil 데몬과 연결되지 않아 영역 상태를 측정할 수 없습니다.'
+    activeOdinMessage: '로컬 Yggdrasil 데몬과 연결되지 않아 영역 상태를 측정할 수 없습니다.',
+    appLaunchUri: 'yggdrasil://status'
   };
 }

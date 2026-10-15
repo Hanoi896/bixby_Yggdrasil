@@ -70,6 +70,14 @@ public:
     std::string formatExaonePrompt(const std::vector<ChatMessage>& messages);
 
     /**
+     * 텍스트의 고차원 시맨틱 임베딩 텐서 추출 (RAG 의미 검색용)
+     * llama_decode 후 hidden states로부터 L2 정규화된 밀집 벡터(Dense Embedding) 반환
+     * @param text 입력 문장 또는 단락
+     * @return L2 정규화된 float 임베딩 벡터
+     */
+    std::vector<float> computeEmbedding(const std::string& text);
+
+    /**
      * 현재 엔진 상태 조회
      */
     bool isLoaded() const;

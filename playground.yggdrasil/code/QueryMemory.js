@@ -40,10 +40,12 @@ function normalizeQueryResult(data, query) {
   }
 
   const totalCount = toInt(data.totalCount, records.length, Number.MAX_SAFE_INTEGER, records.length);
+  const launchUri = query ? `yggdrasil://archive?query=${encodeURIComponent(query)}` : 'yggdrasil://archive';
   const response = {
     records: records,
     totalCount: totalCount,
-    summaryMessage: toText(data.summaryMessage, buildSummary(query, totalCount), 300)
+    summaryMessage: toText(data.summaryMessage, buildSummary(query, totalCount), 300),
+    appLaunchUri: launchUri
   };
   if (query) response.query = query;
   return response;
@@ -75,10 +77,12 @@ function buildSummary(query, totalCount) {
 }
 
 function buildOfflineResult(query) {
+  const launchUri = query ? `yggdrasil://archive?query=${encodeURIComponent(query)}` : 'yggdrasil://archive';
   const response = {
     records: [],
     totalCount: 0,
-    summaryMessage: '로컬 Yggdrasil 데몬과 연결되지 않아 Munin 의 기억을 불러올 수 없습니다.'
+    summaryMessage: '로컬 Yggdrasil 데몬과 연결되지 않아 Munin 의 기억을 불러올 수 없습니다.',
+    appLaunchUri: launchUri
   };
   if (query) response.query = query;
   return response;

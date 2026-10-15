@@ -1,10 +1,26 @@
 result-view {
   match: ExecutionResult (this)
 
+  message {
+    template ("#{value(this.message)}")
+  }
+
+  app-launch {
+    payload-uri ("#{value(this.appLaunchUri)}")
+  }
+
   render {
     layout {
       section {
         content {
+          if (exists(this.appLaunchUri)) {
+            attribution-link {
+              label {
+                template ("🦅 이그드라실 앱에서 결과 확인")
+              }
+              url ("#{value(this.appLaunchUri)}")
+            }
+          }
           // One UI 카드 1: 궁니르 실행 상태 & 결과 메시지
           compound-card {
             content {

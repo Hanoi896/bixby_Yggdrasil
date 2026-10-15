@@ -1,10 +1,26 @@
 result-view {
   match: PantheonOverview (this)
 
+  message {
+    template ("판테온 시스템 종합 현황입니다. 이그드라실 앱에서 실시간 상태를 확인하실 수 있습니다.")
+  }
+
+  app-launch {
+    payload-uri ("#{value(this.appLaunchUri)}")
+  }
+
   render {
     layout {
       section {
         content {
+          if (exists(this.appLaunchUri)) {
+            attribution-link {
+              label {
+                template ("🦅 이그드라실 앱에서 상세 상태 보기")
+              }
+              url ("#{value(this.appLaunchUri)}")
+            }
+          }
           // One UI 카드 1: 종합 판테온 관제 헤더
           compound-card {
             content {

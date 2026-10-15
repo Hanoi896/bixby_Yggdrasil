@@ -102,4 +102,50 @@ Java_com_yggdrasil_assistant_llm_LocalLlmService_getEngineStatsNative(
     return env->NewStringUTF(buf);
 }
 
+static jfloatArray computeEmbeddingInternal(JNIEnv *env, jstring text_) {
+    if (!g_runtime || !g_runtime->isLoaded() || text_ == nullptr) {
+        return nullptr;
+    }
+
+    const char *text = env->GetStringUTFChars(text_, nullptr);
+    std::string textStr(text ? text : "");
+    env->ReleaseStringUTFChars(text_, text);
+
+    if (textStr.empty()) {
+        return nullptr;
+    }
+
+    std::vector<float> emb = g_runtime->computeEmbedding(textStr);
+    if (emb.empty()) {
+        return nullptr;
+    }
+
+    jfloatArray result = env->NewFloatArray(static_cast<jsize>(emb.size()));
+    if (!result) {
+        return nullptr;
+    }
+
+    env->SetFloatArrayRegion(result, 0, static_cast<jsize>(emb.size()), emb.data());
+    return result;
 }
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_yggdrasil_assistant_llm_LocalLlmService_computeEmbeddingNative(
+    JNIEnv *env,
+    jobject /* this */,
+    jstring text_
+) {
+    return computeEmbeddingInternal(env, text_);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_yggdrasil_assistant_rag_MuninEmbeddingEngine_computeEmbeddingNative(
+    JNIEnv *env,
+    jobject /* this */,
+    jstring text_
+) {
+    return computeEmbeddingInternal(env, text_);
+}
+
+}
+

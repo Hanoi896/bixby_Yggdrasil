@@ -1,10 +1,26 @@
 result-view {
   match: YggdrasilGrowthStatus (this)
 
+  message {
+    template ("세계수 위그드라실의 성장 현황입니다. 이그드라실 앱에서 상세 통계를 확인하세요.")
+  }
+
+  app-launch {
+    payload-uri ("#{value(this.appLaunchUri)}")
+  }
+
   render {
     layout {
       section {
         content {
+          if (exists(this.appLaunchUri)) {
+            attribution-link {
+              label {
+                template ("🦅 이그드라실 앱에서 성장 상태 보기")
+              }
+              url ("#{value(this.appLaunchUri)}")
+            }
+          }
           // One UI 카드 1: 세계수 성장 & 지혜 포인트
           compound-card {
             content {

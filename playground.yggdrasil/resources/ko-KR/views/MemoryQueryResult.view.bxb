@@ -1,10 +1,26 @@
 result-view {
   match: MemoryQueryResult (this)
 
+  message {
+    template ("#{value(this.summaryMessage)}")
+  }
+
+  app-launch {
+    payload-uri ("#{value(this.appLaunchUri)}")
+  }
+
   render {
     layout {
       section {
         content {
+          if (exists(this.appLaunchUri)) {
+            attribution-link {
+              label {
+                template ("🦅 이그드라실 앱에서 기억 상세 조회")
+              }
+              url ("#{value(this.appLaunchUri)}")
+            }
+          }
           // One UI 카드 1: 검색 헤더 및 요약 메시지
           compound-card {
             content {

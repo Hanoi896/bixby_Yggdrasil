@@ -97,4 +97,8 @@ dependencies {
 
     // WorkManager (백그라운드 캐시 GC)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // Google ML Kit 온디바이스 Vision OCR (한국어 및 라틴어 지원)
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
 }

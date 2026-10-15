@@ -16,10 +16,12 @@ import androidx.compose.ui.unit.sp
 import com.yggdrasil.assistant.persona.UserPersonaManager
 import com.yggdrasil.assistant.proactive.ProactiveRoutineManager
 import com.yggdrasil.assistant.storage.AppStorageVaultManager
+import com.yggdrasil.assistant.storage.ModelAutoSyncManager
 
 /**
  * [MainAppScreen] - Pure Black & White 모노크롬 네비게이션 셸
  * 4대 탭: [대화(채팅)], [상태], [보관소], [설정]
+ * 온보딩: 기기 내 모델 미존재 시 ModelDownloadScreen 우선 렌더링
  */
 @Composable
 fun MainAppScreen(
@@ -28,18 +30,42 @@ fun MainAppScreen(
     vaultManager: AppStorageVaultManager,
     pendingQuery: String? = null,
     onQueryConsumed: () -> Unit = {},
+    targetTab: Int? = null,
+    onTabConsumed: () -> Unit = {},
     onSendMessageToNpu: suspend (String) -> String = { "온디바이스 EXAONE 3.0에서 정상 처리되었습니다." },
     onEmergencyLockdown: () -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val modelSyncManager = remember { ModelAutoSyncManager.getInstance(context) }
+    var isModelReady by remember { mutableStateOf(modelSyncManager.getActiveModelFile() != null) }
+
+    var selectedTab by remember { mutableStateOf(targetTab ?: 0) }
     val tabs = listOf("대화", "상태", "보관소", "설정")
     val icons = listOf(Icons.Default.ChatBubbleOutline, Icons.Default.Home, Icons.Default.Folder, Icons.Default.Settings)
 
+    // 빅스비 딥링크 호스트 수신 시 해당 탭으로 자동 즉시 전환
+    LaunchedEffect(targetTab) {
+        if (targetTab != null && targetTab in 0..3) {
+            selectedTab = targetTab
+            onTabConsumed()
+        }
+    }
+
     // 빅스비 딥링크 발화가 수신되면 대화 탭(0번)으로 자동 즉시 전환
     LaunchedEffect(pendingQuery) {
-        if (!pendingQuery.isNullOrBlank()) {
+        if (!pendingQuery.isNullOrBlank() && targetTab == null) {
             selectedTab = 0
         }
+    }
+
+    // 모델이 아직 기기에 설치되지 않은 경우 온보딩 다운로드 화면 표시
+    if (!isModelReady) {
+        ModelDownloadScreen(
+            onDownloadComplete = {
+                isModelReady = true
+            }
+        )
+        return
     }
 
     Scaffold(

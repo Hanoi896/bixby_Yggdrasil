@@ -1,53 +1,99 @@
 package com.yggdrasil.assistant.rag
 
+import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.sqrt
 
 /**
  * MuninEmbeddingEngine
- * 초경량 한국어 임베딩 모델 (bge-small-ko-v1.5, 약 50MB) 온디바이스 추론 엔진
+ * 기억 서기관 Munin 온디바이스 시맨틱 임베딩 & RAG 엔진
  * 
- * 1. 512차원 고정밀 한국어 의미 벡터(Dense Embedding) 추출
- * 2. NPU / NEON SIMD 하드웨어 가속을 통해 텍스트당 15ms 이내 초고속 벡터화
- * 3. L2 정규화(Unit Normalization)를 적용하여 내적(Dot Product)만으로 코사인 유사도 고속 계산
+ * 1. 온디바이스 NPU C++ 가속 런타임(yggdrasil_llm)의 llama.cpp Hidden States 기반 실제 의미 텐서 추출
+ * 2. 텍스트 간 L2 정규화(Unit Normalization) 기반 초고속 코사인 유사도(Cosine Similarity) 연산
+ * 3. 온디바이스 모델 미로드 시에도 가짜 난수(Random)를 배제하고 결정론적 서브워드 바이그램 TF 벡터로 안전하게 폴백
  */
 class MuninEmbeddingEngine {
 
     companion object {
-        const val EMBEDDING_DIM = 512
-        const val MODEL_NAME = "bge-small-ko-v1.5.onnx"
-        const val MODEL_SIZE_BYTES = 52_428_800L // 약 50MB
+        private const val TAG = "MuninEmbeddingEngine"
+        const val DEFAULT_EMBEDDING_DIM = 2048 // 온디바이스 EXAONE 히든 스테이트 기본 차원
+        const val FALLBACK_DIM = 512
+
+        init {
+            try {
+                System.loadLibrary("yggdrasil_llm")
+                Log.i(TAG, "온디바이스 LLM/임베딩 네이티브 라이브러리(yggdrasil_llm) 로드 성공")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.w(TAG, "네이티브 라이브러리 로드 대기: JVM/테스트 환경 폴백 활성화")
+            }
+        }
     }
 
-    private var isLoaded: Boolean = true
-
     /**
-     * 입력 텍스트를 512차원 L2 정규화 임베딩 벡터로 변환
+     * 입력 텍스트를 온디바이스 L2 정규화 임베딩 벡터로 변환
+     * 1순위: llama.cpp NPU 가속 C API를 통한 실제 딥러닝 히든 스테이트 텐서 추출
+     * 2순위: 네이티브 미연결 시 결정론적 서브워드 TF 벡터 생성 (가짜 난수 완전 배제)
+     * 
      * @param text 사용자 발화 또는 기억 문장
-     * @return 512차원 FloatArray
+     * @return L2 정규화된 FloatArray 의미 벡터
      */
     fun embedText(text: String): FloatArray {
-        val vector = FloatArray(EMBEDDING_DIM)
-        if (text.isBlank()) return vector
-
-        // 한국어 음절 및 형태소 해시 기반 결정론적 의미 벡터 생성 (ONNX 임베딩 런타임 호환)
         val cleanText = text.trim()
-        val seed = cleanText.hashCode().toLong()
-        val random = java.util.Random(seed)
-
-        var normSquare = 0f
-        for (i in 0 until EMBEDDING_DIM) {
-            val charWeight = if (i < cleanText.length) cleanText[i].code.toFloat() else 1.0f
-            val value = (random.nextGaussian().toFloat() * 0.5f) + (charWeight * 0.001f)
-            vector[i] = value
-            normSquare += value * value
+        if (cleanText.isEmpty()) {
+            return FloatArray(FALLBACK_DIM)
         }
 
-        // L2 Unit Normalization (길이 = 1.0으로 정규화하여 코사인 유사도를 단순 내적으로 계산 가능)
-        val norm = sqrt(normSquare.toDouble()).toFloat()
+        // 1. 온디바이스 네이티브 C API (llama.cpp) 호출 시도
+        try {
+            val nativeVector = computeEmbeddingNative(cleanText)
+            if (nativeVector != null && nativeVector.isNotEmpty()) {
+                return nativeVector
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            // 네이티브 라이브러리 미바인딩 환경
+        } catch (e: Exception) {
+            Log.e(TAG, "네이티브 임베딩 추출 중 예외 발생: ${e.message}")
+        }
+
+        // 2. 가짜 Random 난수를 쓰지 않는 결정론적 서브워드 바이그램 TF 폴백 벡터
+        return computeDeterministicSubwordEmbedding(cleanText, FALLBACK_DIM)
+    }
+
+    /**
+     * 가짜 난수(Fake Random)를 배제하고 한글 음절 및 단어의 통계적 바이그램 빈도를 반영하는
+     * 결정론적(Deterministic) 서브워드 임베딩 벡터 생성기 (L2 정규화 완료)
+     */
+    private fun computeDeterministicSubwordEmbedding(text: String, dim: Int): FloatArray {
+        val vector = FloatArray(dim)
+        if (text.isEmpty()) return vector
+
+        // 1. 글자 단위 가중치 투영
+        for (i in text.indices) {
+            val charCode = text[i].code
+            val idx = (charCode * 31 + i) % dim
+            val positiveIdx = if (idx < 0) idx + dim else idx
+            vector[positiveIdx] += 1.0f
+        }
+
+        // 2. 바이그램(음절 쌍) 연속성 투영 (의미적 유사 문맥 반영)
+        if (text.length >= 2) {
+            for (i in 0 until text.length - 1) {
+                val biCode = (text[i].code shl 5) xor text[i + 1].code
+                val idx = (biCode * 17) % dim
+                val positiveIdx = if (idx < 0) idx + dim else idx
+                vector[positiveIdx] += 2.0f
+            }
+        }
+
+        // 3. L2 정규화 (길이 1.0으로 스케일링하여 코사인 유사도를 단순 내적으로 계산 가능)
+        var sumSquares = 0f
+        for (v in vector) {
+            sumSquares += v * v
+        }
+        val norm = sqrt(sumSquares.toDouble()).toFloat()
         if (norm > 0f) {
-            for (i in 0 until EMBEDDING_DIM) {
+            for (i in 0 until dim) {
                 vector[i] /= norm
             }
         }
@@ -57,14 +103,35 @@ class MuninEmbeddingEngine {
 
     /**
      * 두 임베딩 벡터 간의 코사인 유사도 계산 (-1.0 ~ 1.0)
+     * 두 벡터 모두 L2 정규화되어 있으므로 단순 내적(Dot Product)으로 초고속 계산
+     * 4-way Loop Unrolling 최적화로 ARMv8 파이프라인 캐시 및 브랜치 예측 극대화
      */
     fun calculateCosineSimilarity(vecA: FloatArray, vecB: FloatArray): Float {
-        if (vecA.size != EMBEDDING_DIM || vecB.size != EMBEDDING_DIM) return 0f
+        val sizeA = vecA.size
+        val sizeB = vecB.size
+        if (sizeA == 0 || sizeB == 0) return 0f
+
+        val compareDim = kotlin.math.min(sizeA, sizeB)
         var dotProduct = 0f
-        for (i in 0 until EMBEDDING_DIM) {
-            dotProduct += vecA[i] * vecB[i]
+        var i = 0
+
+        // 4-way unrolling
+        val limit = compareDim - 3
+        while (i < limit) {
+            dotProduct += (vecA[i] * vecB[i]) +
+                          (vecA[i + 1] * vecB[i + 1]) +
+                          (vecA[i + 2] * vecB[i + 2]) +
+                          (vecA[i + 3] * vecB[i + 3])
+            i += 4
         }
-        return dotProduct
+
+        // 잔여 차원 처리
+        while (i < compareDim) {
+            dotProduct += vecA[i] * vecB[i]
+            i++
+        }
+
+        return dotProduct.coerceIn(-1.0f, 1.0f)
     }
 
     /**
@@ -90,4 +157,9 @@ class MuninEmbeddingEngine {
         }
         return vector
     }
+
+    // ==========================================
+    // C++ JNI 네이티브 선언
+    // ==========================================
+    private external fun computeEmbeddingNative(text: String): FloatArray?
 }

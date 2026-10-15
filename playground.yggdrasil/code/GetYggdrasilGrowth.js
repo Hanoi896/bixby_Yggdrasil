@@ -39,7 +39,8 @@ function normalizeGrowth(data) {
     wisdomPoints: toInt(data.wisdomPoints, 0, MAX_WISDOM_POINTS, 0),
     guardianAgent: toText(data.guardianAgent, STAGE_GUARDIAN[stage], 30),
     unlockedAbilities: abilities,
-    nextStageRequirement: toText(data.nextStageRequirement, '다음 단계 조건 정보 없음', 200)
+    nextStageRequirement: toText(data.nextStageRequirement, '다음 단계 조건 정보 없음', 200),
+    appLaunchUri: 'yggdrasil://status'
   };
 }
 
@@ -57,6 +58,7 @@ function buildOfflineGrowth(errorMessage) {
     wisdomPoints: 0,
     guardianAgent: STAGE_GUARDIAN[stage],
     unlockedAbilities: ['오프라인 - 성장 데이터 미수신'],
-    nextStageRequirement: reqMsg
+    nextStageRequirement: reqMsg,
+    appLaunchUri: 'yggdrasil://status'
   };
 }

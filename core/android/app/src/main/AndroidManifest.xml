@@ -49,6 +49,15 @@
                 <data
                     android:scheme="yggdrasil"
                     android:host="launch" />
+                <data
+                    android:scheme="yggdrasil"
+                    android:host="status" />
+                <data
+                    android:scheme="yggdrasil"
+                    android:host="archive" />
+                <data
+                    android:scheme="yggdrasil"
+                    android:host="settings" />
             </intent-filter>
         </activity>
 

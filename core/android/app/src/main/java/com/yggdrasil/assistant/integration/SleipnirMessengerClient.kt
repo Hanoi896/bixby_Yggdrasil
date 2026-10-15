@@ -3,23 +3,38 @@ package com.yggdrasil.assistant.integration
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
-import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.io.PrintWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * SleipnirMessengerClient
+ * [SleipnirMessengerClient]
  * 고속 통신자 Sleipnir 기반 범용 메신저 연동 엔진
  * 
- * 1. 텔레그램 Bot API 기반 텍스트 메시지 및 대용량 압축 파일(ZIP) 비동기 전송
+ * 1. 텔레그램 Bot API 기반 실제 텍스트 메시지 및 대용량 압축 파일(ZIP) 전송
  * 2. 카카오톡 및 안드로이드 시스템 공유(System Share Intent) 브릿지
  * 3. Hugin messenger_send 도구 파이프라인과 1:1 연동
  */
 class SleipnirMessengerClient(private val context: Context) {
+
+    companion object {
+        private const val PREFS_NAME = "yggdrasil_messenger_config"
+        private const val KEY_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
+        private const val KEY_TELEGRAM_CHAT_ID = "telegram_default_chat_id"
+
+        @Volatile
+        private var instance: SleipnirMessengerClient? = null
+
+        fun getInstance(context: Context): SleipnirMessengerClient {
+            return instance ?: synchronized(this) {
+                instance ?: SleipnirMessengerClient(context.applicationContext).also { instance = it }
+            }
+        }
+    }
 
     data class SendResult(
         val success: Boolean,
@@ -27,6 +42,48 @@ class SleipnirMessengerClient(private val context: Context) {
         val messageId: String?,
         val detailMessage: String
     )
+
+    /**
+     * 텔레그램 인증 설정 저장
+     */
+    fun saveTelegramConfig(botToken: String, defaultChatId: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(KEY_TELEGRAM_BOT_TOKEN, botToken.trim())
+            .putString(KEY_TELEGRAM_CHAT_ID, defaultChatId.trim())
+            .apply()
+    }
+
+    /**
+     * 텔레그램 인증 설정 조회
+     */
+    fun getTelegramConfig(): Pair<String?, String?> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val token = prefs.getString(KEY_TELEGRAM_BOT_TOKEN, null)?.takeIf { it.isNotBlank() }
+        val chatId = prefs.getString(KEY_TELEGRAM_CHAT_ID, null)?.takeIf { it.isNotBlank() }
+        return Pair(token, chatId)
+    }
+
+    /**
+     * 텔레그램 연동 테스트 메시지 1건 발송
+     */
+    fun testTelegramConnection(): SendResult {
+        val (token, chatId) = getTelegramConfig()
+        if (token.isNullOrBlank() || chatId.isNullOrBlank()) {
+            return SendResult(
+                success = false,
+                platform = "telegram",
+                messageId = null,
+                detailMessage = "Bot Token 또는 Chat ID가 설정되지 않았습니다."
+            )
+        }
+        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.KOREA).format(java.util.Date())
+        return sendTelegram(
+            chatId = chatId,
+            textMessage = "🌲 [Yggdrasil Assistant] 텔레그램 연동 테스트 성공!\n일시: $timestamp\n정상적으로 봇 메시지가 수신됩니다.",
+            attachmentFilePath = null
+        )
+    }
 
     /**
      * 범용 메신저 전송 디스패처
@@ -53,19 +110,42 @@ class SleipnirMessengerClient(private val context: Context) {
         textMessage: String?,
         attachmentFilePath: String?
     ): SendResult {
-        val targetChatId = chatId ?: "@yggdrasil_channel"
-        val botToken = "BOT_TOKEN_ON_DEVICE_LOCAL" // 기기 설정/암호화 스토리지에서 주입
+        val (savedToken, savedChatId) = getTelegramConfig()
+        val botToken = savedToken
+        val targetChatId = chatId?.takeIf { it.isNotBlank() } ?: savedChatId
 
+        // 토큰이 등록되어 있지 않으면 정직하게 에러 반환 (가짜 성공 차단)
+        if (botToken.isNullOrBlank()) {
+            return SendResult(
+                success = false,
+                platform = "telegram",
+                messageId = null,
+                detailMessage = "텔레그램 Bot Token이 설정되지 않았습니다. 앱 설정에서 토큰을 등록해 주세요."
+            )
+        }
+
+        if (targetChatId.isNullOrBlank()) {
+            return SendResult(
+                success = false,
+                platform = "telegram",
+                messageId = null,
+                detailMessage = "전송 대상 Chat ID가 지정되지 않았습니다."
+            )
+        }
+
+        // 파일 첨부 전송인 경우 (sendDocument)
         if (!attachmentFilePath.isNullOrBlank()) {
             val file = File(attachmentFilePath)
             if (!file.exists()) {
                 return SendResult(false, "telegram", null, "첨부 파일이 존재하지 않습니다: $attachmentFilePath")
             }
-            // sendDocument HTTP Multipart 전송
+
             return try {
                 val boundary = "==YggdrasilBoundary==" + System.currentTimeMillis()
                 val url = URL("https://api.telegram.org/bot$botToken/sendDocument")
                 val conn = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15000
+                    readTimeout = 30000
                     useCaches = false
                     doOutput = true
                     doInput = true
@@ -90,7 +170,7 @@ class SleipnirMessengerClient(private val context: Context) {
                         // document 파일 파라미터
                         writer.append("--$boundary").append("\r\n")
                         writer.append("Content-Disposition: form-data; name=\"document\"; filename=\"${file.name}\"").append("\r\n")
-                        writer.append("Content-Type: application/zip").append("\r\n\r\n")
+                        writer.append("Content-Type: application/octet-stream").append("\r\n\r\n")
                         writer.flush()
 
                         FileInputStream(file).use { fileIn ->
@@ -107,14 +187,50 @@ class SleipnirMessengerClient(private val context: Context) {
                     }
                 }
 
-                SendResult(true, "telegram", "tg-doc-${System.currentTimeMillis()}", "텔레그램 대용량 파일 전송 완료: ${file.name}")
+                val responseCode = conn.responseCode
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    SendResult(true, "telegram", "tg-doc-${System.currentTimeMillis()}", "텔레그램 파일 전송 완료: ${file.name}")
+                } else {
+                    val errorMsg = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $responseCode"
+                    SendResult(false, "telegram", null, "텔레그램 서버 응답 오류 ($responseCode): $errorMsg")
+                }
             } catch (e: Exception) {
-                // 오프라인 모드 시 폴백
-                SendResult(true, "telegram", "mock-tg-id", "텔레그램 전송 준비 완료 (오프라인 캐시 대기열 등록)")
+                // 실패 시 실제 에러 사유를 정직하게 반환 (가짜 성공 속임수 제거)
+                SendResult(false, "telegram", null, "텔레그램 전송 실패: ${e.localizedMessage ?: e.message}")
             }
         }
 
-        return SendResult(true, "telegram", "tg-msg-001", "텔레그램 텍스트 메시지 전송 성공")
+        // 일반 텍스트 전송인 경우 (sendMessage)
+        return try {
+            val url = URL("https://api.telegram.org/bot$botToken/sendMessage")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 15000
+                requestMethod = "POST"
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            }
+
+            val jsonBody = JSONObject().apply {
+                put("chat_id", targetChatId)
+                put("text", textMessage ?: "")
+            }
+
+            conn.outputStream.use { os ->
+                os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
+                os.flush()
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                SendResult(true, "telegram", "tg-msg-${System.currentTimeMillis()}", "텔레그램 텍스트 메시지 전송 성공")
+            } else {
+                val errorMsg = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $responseCode"
+                SendResult(false, "telegram", null, "텔레그램 전송 실패 ($responseCode): $errorMsg")
+            }
+        } catch (e: Exception) {
+            SendResult(false, "telegram", null, "텔레그램 네트워크 오류: ${e.localizedMessage ?: e.message}")
+        }
     }
 
     /**

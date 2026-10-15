@@ -28,4 +28,8 @@ structure (YggdrasilGrowthStatus) {
     type (NextStageRequirement)
     min (Required) max (One)
   }
+  property (appLaunchUri) {
+    type (AppLaunchUri)
+    min (Optional) max (One)
+  }
 }

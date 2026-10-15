@@ -141,6 +141,17 @@ class LocalLlmService : Service() {
     }
 
     /**
+     * 온디바이스 시맨틱 임베딩 텐서 추출 (JNI 경유)
+     */
+    fun computeEmbedding(text: String): FloatArray? {
+        return try {
+            computeEmbeddingNative(text)
+        } catch (e: UnsatisfiedLinkError) {
+            null
+        }
+    }
+
+    /**
      * 엔진 통계 조회 (RAM 사용량, 초당 토큰 수)
      */
     fun getStats(): String {
@@ -170,5 +181,7 @@ class LocalLlmService : Service() {
     private external fun startDaemonServerNative(port: Int): Boolean
     private external fun stopDaemonServerNative()
     private external fun generateTextNative(prompt: String): String
+    private external fun computeEmbeddingNative(text: String): FloatArray?
     private external fun getEngineStatsNative(): String
 }
+

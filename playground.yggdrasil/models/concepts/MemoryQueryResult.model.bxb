@@ -16,4 +16,8 @@ structure (MemoryQueryResult) {
     type (MemorySummaryMessage)
     min (Required) max (One)
   }
+  property (appLaunchUri) {
+    type (AppLaunchUri)
+    min (Optional) max (One)
+  }
 }

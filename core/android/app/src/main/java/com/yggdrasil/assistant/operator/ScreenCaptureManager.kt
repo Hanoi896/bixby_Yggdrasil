@@ -14,6 +14,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import java.nio.ByteBuffer
 
 /**
@@ -28,6 +31,7 @@ import java.nio.ByteBuffer
 class ScreenCaptureManager(private val context: Context) {
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private val textRecognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
@@ -57,12 +61,31 @@ class ScreenCaptureManager(private val context: Context) {
         screenDensity = metrics.densityDpi
     }
 
+    private var isSessionValid = false
+    var onSessionExpired: (() -> Unit)? = null
+
     /**
      * MediaProjection 권한 인스턴스 등록 및 캡처 파이프라인 초기화
+     * (Android 14+ MediaProjection 수명주기 콜백 지원)
      */
     fun initializeProjection(projection: MediaProjection) {
         this.mediaProjection = projection
+        this.isSessionValid = true
         updateScreenDimensions()
+
+        // Android 14(API 34)+ 필수 콜백 등록
+        projection.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                super.onStop()
+                isSessionValid = false
+                virtualDisplay?.release()
+                virtualDisplay = null
+                imageReader?.close()
+                imageReader = null
+                mediaProjection = null
+                onSessionExpired?.invoke()
+            }
+        }, Handler(Looper.getMainLooper()))
 
         imageReader = ImageReader.newInstance(
             screenWidth,
@@ -82,6 +105,11 @@ class ScreenCaptureManager(private val context: Context) {
             Handler(Looper.getMainLooper())
         )
     }
+
+    /**
+     * 캡처 세션이 현재 유효한지 확인
+     */
+    fun isProjectionActive(): Boolean = isSessionValid && mediaProjection != null
 
     /**
      * 현재 화면을 온디바이스 Bitmap으로 1회 캡처
@@ -158,38 +186,64 @@ class ScreenCaptureManager(private val context: Context) {
     }
 
     /**
-     * 온디바이스 ML Kit 파이프라인
+     * Google ML Kit 온디바이스 Vision OCR 실제 추론 파이프라인
+     * 캡처된 Bitmap 버퍼에서 모든 텍스트 블록과 좌표(Rect)를 실시간 추출합니다.
      */
     private fun recognizeTextOnDevice(bitmap: Bitmap, onComplete: (List<RecognizedElement>) -> Unit) {
-        // 비트맵 분석 후 인식된 텍스트 요소 리스트 반환
-        val detectedElements = mutableListOf<RecognizedElement>()
+        val inputImage = InputImage.fromBitmap(bitmap, 0)
+        textRecognizer.process(inputImage)
+            .addOnSuccessListener { visionText ->
+                val detectedElements = mutableListOf<RecognizedElement>()
+                for (block in visionText.textBlocks) {
+                    for (line in block.lines) {
+                        val text = line.text.trim()
+                        if (text.isNotBlank()) {
+                            val box = line.boundingBox ?: Rect(0, 0, 0, 0)
+                            val center = Point(box.centerX(), box.centerY())
+                            val isClickable = isClickableCandidate(text, box)
+                            detectedElements.add(
+                                RecognizedElement(
+                                    text = text,
+                                    bounds = box,
+                                    centerPoint = center,
+                                    confidence = line.confidence ?: 0.95f,
+                                    isClickableHint = isClickable
+                                )
+                            )
+                        }
+                    }
+                }
+                onComplete(detectedElements)
+            }
+            .addOnFailureListener {
+                onComplete(emptyList())
+            }
+    }
 
-        // 경량 온디바이스 OCR 추론 결과 매핑 (예시: 화면 중앙 및 주요 액션 영역 스캔)
-        val dummyWidth = bitmap.width
-        val dummyHeight = bitmap.height
-
-        // 상단 바, 본문, 하단 바에 대한 기본 바운딩 가이드 생성
-        val topBounds = Rect(50, 100, dummyWidth - 50, 250)
-        val centerBounds = Rect(100, dummyHeight / 2 - 100, dummyWidth - 100, dummyHeight / 2 + 100)
-        val bottomBounds = Rect(50, dummyHeight - 250, dummyWidth - 50, dummyHeight - 100)
-
-        detectedElements.add(
-            RecognizedElement(
-                text = "확인",
-                bounds = bottomBounds,
-                centerPoint = Point(bottomBounds.centerX(), bottomBounds.centerY()),
-                confidence = 0.98f,
-                isClickableHint = true
-            )
+    /**
+     * UI 버튼/클릭 가능 요소 판정 휴리스틱
+     */
+    private fun isClickableCandidate(text: String, bounds: Rect): Boolean {
+        val buttonKeywords = listOf(
+            "확인", "취소", "저장", "닫기", "전송", "완료", "다음", "뒤로",
+            "로그인", "설정", "동의", "검색", "추가", "삭제", "수정", "공유",
+            "열기", "실행", "선택", "신청", "조회", "구매", "결제", "허용"
         )
-
-        onComplete(detectedElements)
+        val matchesKeyword = buttonKeywords.any { text.contains(it) }
+        val width = bounds.width()
+        val height = bounds.height()
+        val isButtonAspect = width > height && height in 30..300
+        return matchesKeyword || isButtonAspect
     }
 
     /**
      * 리소스 해제
      */
     fun release() {
+        try {
+            textRecognizer.close()
+        } catch (ignored: Exception) {
+        }
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()

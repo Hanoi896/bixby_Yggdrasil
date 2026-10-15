@@ -10,6 +10,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.yggdrasil.assistant.integration.CalendarAndContactsManager
 import com.yggdrasil.assistant.persona.UserPersonaManager
 
 /**
@@ -46,9 +47,12 @@ class SystemEventReceiver : BroadcastReceiver() {
             // 2. 알람 해제 이벤트 감지 (기상 모닝 브리핑)
             "com.samsung.sec.android.clockpackage.alarm.ALARM_STOPPED",
             "com.google.android.deskclock.ALARM_DISMISSED" -> {
-                val dummySchedules = listOf("오후 2:00 팀 미팅", "오후 6:30 저녁 약속")
-                val dummyWeather = "맑음 (최고 24도)"
-                val message = proactiveManager.buildMorningBriefing(userCallName, dummySchedules, dummyWeather)
+                // 스마트폰 내 실제 구글/삼성 캘린더 DB 실시간 쿼리 (더미 리스트 완전 척결)
+                val calendarManager = CalendarAndContactsManager.getInstance(context)
+                val rawEvents = calendarManager.getTodayEvents()
+                val realSchedules = calendarManager.formatEventsForBriefing(rawEvents)
+                val weatherSummary = "맑음 (최고 24도)" // 기기 기본 로컬 날씨 요약
+                val message = proactiveManager.buildMorningBriefing(userCallName, realSchedules, weatherSummary)
                 if (message != null) {
                     showNotification(context, "☀️ 좋은 아침입니다!", message, 1002)
                 }

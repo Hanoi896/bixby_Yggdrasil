@@ -20,4 +20,8 @@ structure (PantheonOverview) {
     type (ActiveOdinMessage)
     min (Required) max (One)
   }
+  property (appLaunchUri) {
+    type (AppLaunchUri)
+    min (Optional) max (One)
+  }
 }

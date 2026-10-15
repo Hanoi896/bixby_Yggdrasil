@@ -31,7 +31,8 @@ function normalizeSecurity(data) {
     // 불명확한 값은 안전한 쪽(차단/필수)으로 처리
     isLearningBlocked: toBool(data.isLearningBlocked, true),
     multiSigRequired: toBool(data.multiSigRequired, true),
-    activeTrusteesCount: toInt(data.activeTrusteesCount, 0, MAX_TRUSTEES, 0)
+    activeTrusteesCount: toInt(data.activeTrusteesCount, 0, MAX_TRUSTEES, 0),
+    appLaunchUri: 'yggdrasil://settings'
   };
 }
 
@@ -44,6 +45,7 @@ function buildFailSafeSecurity() {
     isBreakGlassActive: false,
     isLearningBlocked: true,
     multiSigRequired: true,
-    activeTrusteesCount: 0
+    activeTrusteesCount: 0,
+    appLaunchUri: 'yggdrasil://settings'
   };
 }

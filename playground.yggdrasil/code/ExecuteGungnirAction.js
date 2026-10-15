@@ -66,7 +66,8 @@ function normalizeExecution(data, actionType, policy) {
       requiredLevel: requiredLevel,
       message: '실행 결과에 Odin 서명이 없어 성공으로 인정할 수 없습니다.',
       signedHash: UNSIGNED_HASH,
-      realm: realm
+      realm: realm,
+      appLaunchUri: 'yggdrasil://chat?query=' + encodeURIComponent(actionType || '')
     };
   }
 
@@ -76,7 +77,8 @@ function normalizeExecution(data, actionType, policy) {
     requiredLevel: requiredLevel,
     message: toText(data.message, claimedSuccess ? '작업이 실행되었습니다.' : '작업이 거부되었습니다.', 300),
     signedHash: signedHash || UNSIGNED_HASH,
-    realm: realm
+    realm: realm,
+    appLaunchUri: 'yggdrasil://chat?query=' + encodeURIComponent(actionType || '')
   };
 }
 
@@ -87,6 +89,7 @@ function buildRejected(actionType, policy, message) {
     requiredLevel: policy.requiredLevel,
     message: message,
     signedHash: UNSIGNED_HASH,
-    realm: policy.realm
+    realm: policy.realm,
+    appLaunchUri: 'yggdrasil://chat?query=' + encodeURIComponent(actionType || '')
   };
 }

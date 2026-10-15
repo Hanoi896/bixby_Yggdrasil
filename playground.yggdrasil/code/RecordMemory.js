@@ -43,7 +43,8 @@ function normalizeRecord(data, content, category) {
     content: toText(data.content, content, MAX_MEMORY_CONTENT_LENGTH),
     timestamp: toText(data.timestamp, new Date().toISOString(), 40),
     isEncrypted: toBool(data.isEncrypted, false),
-    signatureHash: signatureHash
+    signatureHash: signatureHash,
+    appLaunchUri: 'yggdrasil://archive'
   };
 }
 
@@ -54,6 +55,7 @@ function buildPendingRecord(content, category) {
     content: content,
     timestamp: new Date().toISOString(),
     isEncrypted: false,
-    signatureHash: UNSIGNED_HASH
+    signatureHash: UNSIGNED_HASH,
+    appLaunchUri: 'yggdrasil://archive'
   };
 }

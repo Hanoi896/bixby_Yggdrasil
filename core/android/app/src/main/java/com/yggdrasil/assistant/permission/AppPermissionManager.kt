@@ -157,12 +157,13 @@ class AppPermissionManager private constructor(private val context: Context) {
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expectedServiceName = "${context.packageName}/com.yggdrasil.assistant.screen_operator.YggdrasilAccessibilityService"
+        val expectedServiceName = "${context.packageName}/com.yggdrasil.assistant.operator.YggdrasilAccessibilityService"
+        val altServiceName = "${context.packageName}/.operator.YggdrasilAccessibilityService"
         val enabledServices = Settings.Secure.getString(
             context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
-        return enabledServices.contains(expectedServiceName)
+        return enabledServices.contains(expectedServiceName) || enabledServices.contains(altServiceName) || enabledServices.contains("YggdrasilAccessibilityService")
     }
 
     private fun isNotificationListenerEnabled(): Boolean {
@@ -177,6 +178,15 @@ class AppPermissionManager private constructor(private val context: Context) {
      * 권한 설정 화면으로 바로 이동하는 Intent 생성
      */
     fun createSettingIntent(item: PermissionItem): Intent {
+        if (item.id == "battery_optimization") {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                return Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            }
+        }
+
         item.intentAction?.let { action ->
             val intent = Intent(action)
             if (action == Settings.ACTION_MANAGE_OVERLAY_PERMISSION) {

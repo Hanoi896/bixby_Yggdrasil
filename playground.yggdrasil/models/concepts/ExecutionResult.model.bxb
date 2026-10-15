@@ -24,4 +24,8 @@ structure (ExecutionResult) {
     type (RealmName)
     min (Required) max (One)
   }
+  property (appLaunchUri) {
+    type (AppLaunchUri)
+    min (Optional) max (One)
+  }
 }

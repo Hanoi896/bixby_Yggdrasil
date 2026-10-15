@@ -20,13 +20,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yggdrasil.assistant.integration.CalendarAndContactsManager
+import com.yggdrasil.assistant.integration.SleipnirMessengerClient
 import com.yggdrasil.assistant.permission.AppPermissionManager
 import com.yggdrasil.assistant.persona.UserPersonaManager
 import com.yggdrasil.assistant.persona.UserPersonaManager.SpeechTone
 import com.yggdrasil.assistant.proactive.ProactiveRoutineManager
 import com.yggdrasil.assistant.storage.AppStorageVaultManager
 import com.yggdrasil.assistant.storage.ModelAutoSyncManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * [SettingsScreen] - Black & White 극도의 미니멀리즘 디자인
@@ -67,6 +71,18 @@ fun SettingsScreen(
 
     // 프라이버시 상태
     var isLearningPaused by remember { mutableStateOf(false) }
+
+    // 메신저(Sleipnir) 및 캘린더 매니저 상태
+    val messengerClient = remember { SleipnirMessengerClient.getInstance(context) }
+    val calendarManager = remember { CalendarAndContactsManager.getInstance(context) }
+    val (savedTgToken, savedTgChatId) = remember { messengerClient.getTelegramConfig() }
+    var tgBotToken by remember { mutableStateOf(savedTgToken ?: "") }
+    var tgChatId by remember { mutableStateOf(savedTgChatId ?: "") }
+    var tgFeedback by remember { mutableStateOf<String?>(null) }
+    var isTestingTelegram by remember { mutableStateOf(false) }
+
+    var todayEvents by remember { mutableStateOf(calendarManager.getTodayEvents()) }
+    var calendarFeedback by remember { mutableStateOf<String?>(null) }
 
     // 스토리지 및 모델 관리 상태
     val modelSyncManager = remember { ModelAutoSyncManager.getInstance(context) }
@@ -326,6 +342,234 @@ fun SettingsScreen(
                 }
             }
 
+            // [카드 3-1] 실제 캘린더 일정 동기화 (Google Calendar Provider)
+            MonoCard(title = "실제 캘린더 일정 동기화 (Google Calendar)") {
+                Text(
+                    "단말기 순정 CalendarContract를 통해 구글/삼성 캘린더와 실시간 동기화됩니다.",
+                    color = Color(0xFF888888),
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (todayEvents.isEmpty()) {
+                    Text(
+                        "• 오늘 예정된 캘린더 일정이 없습니다. (또는 캘린더 권한 허용 대기 중)",
+                        color = Color(0xFF666666),
+                        fontSize = 12.sp
+                    )
+                } else {
+                    todayEvents.forEach { event ->
+                        val timeStr = java.text.SimpleDateFormat("a h:mm", java.util.Locale.KOREAN).format(java.util.Date(event.startTimeMillis))
+                        Text(
+                            "• $timeStr  ${event.title}${if (event.location.isNotBlank()) " (${event.location})" else ""}",
+                            color = Color(0xFFEEEEEE),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            todayEvents = calendarManager.getTodayEvents()
+                            calendarFeedback = "캘린더 일정 ${todayEvents.size}건 동기화 완료"
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444))
+                    ) {
+                        Text("일정 새로고침", fontSize = 11.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            val now = System.currentTimeMillis()
+                            val oneHourLater = now + 3600000L
+                            val twoHourLater = oneHourLater + 3600000L
+                            val newId = calendarManager.insertEvent(
+                                title = "[Yggdrasil] 어시스턴트 테스트 일정",
+                                startTimeMillis = oneHourLater,
+                                endTimeMillis = twoHourLater,
+                                location = "이그드라실 보안 룸",
+                                description = "단말기 실제 캘린더 Provider 연동 테스트입니다."
+                            )
+                            if (newId != -1L) {
+                                todayEvents = calendarManager.getTodayEvents()
+                                calendarFeedback = "✅ 테스트 일정이 캘린더 DB에 성공적으로 등록되었습니다 (ID: $newId)"
+                            } else {
+                                calendarFeedback = "⚠️ 일정 등록 실패: 시스템 권한(CALENDAR_WRITE)을 확인하세요."
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        Text("테스트 일정 추가", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                calendarFeedback?.let { msg ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        msg,
+                        color = if (msg.contains("✅") || msg.contains("완료")) Color(0xFF88FF88) else Color(0xFFFF8888),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            // [카드 3-2] 텔레그램 봇 메신저 연동 (Telegram Bot API)
+            MonoCard(title = "텔레그램 봇 메신저 연동 (Telegram API)") {
+                Text(
+                    "Sleipnir 고속 엔진을 통해 긴급 알림, 압축 파일 및 일일 리포트를 전송합니다.",
+                    color = Color(0xFF888888),
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = tgBotToken,
+                    onValueChange = { tgBotToken = it },
+                    label = { Text("Telegram Bot Token (예: 123456:ABC-DEF1234)", color = Color(0xFF888888), fontSize = 11.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color(0xFF333333),
+                        cursorColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = tgChatId,
+                    onValueChange = { tgChatId = it },
+                    label = { Text("수신 대상 Chat ID (예: 987654321)", color = Color(0xFF888888), fontSize = 11.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color(0xFF333333),
+                        cursorColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            messengerClient.saveTelegramConfig(tgBotToken, tgChatId)
+                            tgFeedback = "✅ 텔레그램 인증 정보가 안전하게 저장되었습니다."
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF444444))
+                    ) {
+                        Text("설정 저장", fontSize = 11.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            if (tgBotToken.isBlank() || tgChatId.isBlank()) {
+                                tgFeedback = "⚠️ Token과 Chat ID를 모두 입력해주세요."
+                                return@Button
+                            }
+                            messengerClient.saveTelegramConfig(tgBotToken, tgChatId)
+                            isTestingTelegram = true
+                            tgFeedback = "텔레그램 테스트 메시지 전송 중..."
+
+                            coroutineScope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    messengerClient.testTelegramConnection()
+                                }
+                                isTestingTelegram = false
+                                tgFeedback = if (result.success) {
+                                    "🎉 [전송 성공] 텔레그램으로 테스트 메시지가 도착했습니다!"
+                                } else {
+                                    "🚨 [전송 실패] ${result.detailMessage}"
+                                }
+                            }
+                        },
+                        enabled = !isTestingTelegram,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        Text(if (isTestingTelegram) "전송 중..." else "연결 테스트 발송", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // 양방향 원격 수신 제어 (Long-Polling)
+                val inboundWorker = remember { com.yggdrasil.assistant.integration.SleipnirInboundWorker.getInstance(context) }
+                var isInboundListening by remember { mutableStateOf(inboundWorker.isRunning) }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Divider(color = Color(0xFF222222))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("양방향 원격 수신 제어 (Long-Polling)", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                        Text("외출 시 텔레그램으로 일정 조회 및 배터리 점검 원격 명령 수신", color = Color(0xFF777777), fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = isInboundListening,
+                        onCheckedChange = { enable ->
+                            isInboundListening = enable
+                            if (enable) {
+                                inboundWorker.startListening()
+                                tgFeedback = "📡 텔레그램 원격 수신 워커가 백그라운드에서 가동되었습니다."
+                            } else {
+                                inboundWorker.stopListening()
+                                tgFeedback = "🛑 텔레그램 원격 수신 워커가 중지되었습니다."
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = Color.White,
+                            uncheckedThumbColor = Color(0xFF888888),
+                            uncheckedTrackColor = Color(0xFF222222)
+                        )
+                    )
+                }
+
+                tgFeedback?.let { msg ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        msg,
+                        color = if (msg.contains("성공") || msg.contains("✅") || msg.contains("가동")) Color(0xFF88FF88) else Color(0xFFFF8888),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
             // [카드 4] 온디바이스 프라이버시
             MonoCard(title = "온디바이스 프라이버시") {
                 Row(
@@ -409,6 +653,50 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
+                // 방식 0: 온라인 공식 HuggingFace 1.6GB 가중치 다운로드
+                val downloader = remember { com.yggdrasil.assistant.llm.ExaoneModelDownloader.getInstance(context) }
+                val downloadProgress by downloader.progressFlow.collectAsState()
+
+                if (downloadProgress.status == com.yggdrasil.assistant.llm.ExaoneModelDownloader.DownloadStatus.DOWNLOADING ||
+                    downloadProgress.status == com.yggdrasil.assistant.llm.ExaoneModelDownloader.DownloadStatus.VERIFYING) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("1.6GB 모델 다운로드 중... (${downloadProgress.speedBytesPerSec / (1024*1024)} MB/s)", color = Color.White, fontSize = 11.sp)
+                            Text("${downloadProgress.progressPercent}%", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { downloadProgress.progressPercent / 100f },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                            color = Color.White,
+                            trackColor = Color(0xFF333333)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            downloader.startDownload()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            "🌐 온라인 공식 1.6GB 모델 다운로드 (이어받기/SHA-256)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
                 // 방식 1: SAF 시스템 파일 선택기
                 Button(
                     onClick = {
@@ -417,8 +705,8 @@ fun SettingsScreen(
                     enabled = !isImporting,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
+                        containerColor = Color(0xFF222222),
+                        contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
