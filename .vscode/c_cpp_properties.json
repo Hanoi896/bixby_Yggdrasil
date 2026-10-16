@@ -1,0 +1,20 @@
+{
+  "configurations": [
+    {
+      "name": "Android-arm64",
+      "includePath": [
+        "${workspaceFolder}/core/android/app/src/main/cpp/**",
+        "${workspaceFolder}/core/android/app/src/main/cpp/llama.cpp/include",
+        "${workspaceFolder}/core/android/app/src/main/cpp/llama.cpp/ggml/include"
+      ],
+      "defines": [
+        "ANDROID",
+        "__ANDROID__"
+      ],
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-clang-arm64"
+    }
+  ],
+  "version": 4
+}

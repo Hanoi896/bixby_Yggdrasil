@@ -103,8 +103,9 @@ class MuninEmbeddingEngine {
 
     /**
      * 두 임베딩 벡터 간의 코사인 유사도 계산 (-1.0 ~ 1.0)
-     * 두 벡터 모두 L2 정규화되어 있으므로 단순 내적(Dot Product)으로 초고속 계산
-     * 4-way Loop Unrolling 최적화로 ARMv8 파이프라인 캐시 및 브랜치 예측 극대화
+     * [차원 불일치(2048 vs 512) 방어 가드레일 실장]
+     * - 차원이 다를 경우 공통 차원 슬라이스 후 L2 재정규화로 왜곡 원천 차단
+     * - 4-way Loop Unrolling 최적화로 ARMv8 파이프라인 캐시 및 브랜치 예측 극대화
      */
     fun calculateCosineSimilarity(vecA: FloatArray, vecB: FloatArray): Float {
         val sizeA = vecA.size
@@ -113,25 +114,51 @@ class MuninEmbeddingEngine {
 
         val compareDim = kotlin.math.min(sizeA, sizeB)
         var dotProduct = 0f
+        var normSqA = 0f
+        var normSqB = 0f
         var i = 0
 
-        // 4-way unrolling
-        val limit = compareDim - 3
-        while (i < limit) {
-            dotProduct += (vecA[i] * vecB[i]) +
-                          (vecA[i + 1] * vecB[i + 1]) +
-                          (vecA[i + 2] * vecB[i + 2]) +
-                          (vecA[i + 3] * vecB[i + 3])
-            i += 4
+        // 차원이 일치하는 경우 (가장 빈번한 최적 경로: 단순 내적)
+        if (sizeA == sizeB) {
+            val limit = compareDim - 3
+            while (i < limit) {
+                dotProduct += (vecA[i] * vecB[i]) +
+                              (vecA[i + 1] * vecB[i + 1]) +
+                              (vecA[i + 2] * vecB[i + 2]) +
+                              (vecA[i + 3] * vecB[i + 3])
+                i += 4
+            }
+            while (i < compareDim) {
+                dotProduct += vecA[i] * vecB[i]
+                i++
+            }
+            return dotProduct.coerceIn(-1.0f, 1.0f)
         }
 
-        // 잔여 차원 처리
+        // 차원이 불일치하는 경우 (2048 vs 512): 공통 부분 차원에 대한 L2 재정규화 연산
+        val limit = compareDim - 3
+        while (i < limit) {
+            val a0 = vecA[i]; val b0 = vecB[i]
+            val a1 = vecA[i + 1]; val b1 = vecB[i + 1]
+            val a2 = vecA[i + 2]; val b2 = vecB[i + 2]
+            val a3 = vecA[i + 3]; val b3 = vecB[i + 3]
+
+            dotProduct += (a0 * b0) + (a1 * b1) + (a2 * b2) + (a3 * b3)
+            normSqA += (a0 * a0) + (a1 * a1) + (a2 * a2) + (a3 * a3)
+            normSqB += (b0 * b0) + (b1 * b1) + (b2 * b2) + (b3 * b3)
+            i += 4
+        }
         while (i < compareDim) {
-            dotProduct += vecA[i] * vecB[i]
+            val a = vecA[i]; val b = vecB[i]
+            dotProduct += a * b
+            normSqA += a * a
+            normSqB += b * b
             i++
         }
 
-        return dotProduct.coerceIn(-1.0f, 1.0f)
+        val denominator = sqrt((normSqA * normSqB).toDouble()).toFloat()
+        if (denominator <= 0f) return 0f
+        return (dotProduct / denominator).coerceIn(-1.0f, 1.0f)
     }
 
     /**
@@ -146,9 +173,10 @@ class MuninEmbeddingEngine {
     }
 
     /**
-     * ByteArray BLOB을 FloatArray 벡터로 역직렬화
+     * ByteArray BLOB을 FloatArray 벡터로 역직렬화 (손상 방어 가드레일 포함)
      */
     fun blobToVector(blob: ByteArray): FloatArray {
+        if (blob.isEmpty()) return FloatArray(0)
         val count = blob.size / 4
         val vector = FloatArray(count)
         val buffer = ByteBuffer.wrap(blob).order(ByteOrder.LITTLE_ENDIAN)

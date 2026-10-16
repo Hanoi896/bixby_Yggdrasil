@@ -20,11 +20,15 @@ android {
             useSupportLibrary = true
         }
 
-        // C++ NPU 네이티브 엔진 빌드 설정
+        // C++ NPU 네이티브 엔진 빌드 설정 (Snapdragon 8 Elite 하드웨어 가속)
         externalNativeBuild {
             cmake {
                 cppFlags("-std=c++17 -O3 -flto")
-                arguments("-DANDROID_STL=c++_shared")
+                arguments(
+                    "-DANDROID_STL=c++_shared",
+                    "-DGGML_VULKAN=ON",
+                    "-DGGML_HEXAGON=ON"
+                )
             }
         }
         ndk {
@@ -72,7 +76,16 @@ android {
         noCompress += "gguf"
     }
 
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
+    }
+
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }

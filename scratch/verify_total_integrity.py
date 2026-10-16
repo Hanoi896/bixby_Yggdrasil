@@ -80,16 +80,16 @@ required_files = [
     "core/android/app/src/main/java/com/yggdrasil/assistant/ui/MainAppScreen.kt",
     "core/android/app/src/main/java/com/yggdrasil/assistant/ui/SettingsScreen.kt",
     "core/android/app/src/main/java/com/yggdrasil/assistant/ui/ChatScreen.kt",
-    "playground.yggdrasil/temp_yggdrasil/web-dashboard/src/App.tsx",
-    "playground.yggdrasil/temp_yggdrasil/web-dashboard/src/pages/Chat.tsx",
-    "playground.yggdrasil/temp_yggdrasil/web-dashboard/src/pages/Settings.tsx",
+    "web-dashboard/src/App.tsx",
+    "web-dashboard/src/pages/Chat.tsx",
+    "web-dashboard/src/pages/Settings.tsx",
     # Gradle 표준 빌드 스크립트
     "core/android/build.gradle.kts",
     "core/android/settings.gradle.kts",
     "core/android/gradle.properties",
     "core/android/app/build.gradle.kts",
     # 마스터 명세 문서
-    "구현.md"
+    "BluePrint/06_구현_로드맵/구현.md"
 ]
 
 for rf in required_files:
@@ -188,9 +188,10 @@ for text, category in sensitive_inputs:
 # =========================================================================
 # 검사 6. [구현.md] 전체 마일스톤 완료율 무결성 (Roadmap Spec Completion)
 # =========================================================================
-print("\n6. [구현.md] 전체 마일스톤(PART 1 ~ PART 11) 매핑 무결성 검사")
-with open(os.path.join(WORKSPACE_ROOT, "구현.md"), "r", encoding="utf-8") as f:
-    md_content = f.read()
+print("\n6. [구현.md & 아카이브] 마일스톤 매핑 무결성 검사")
+archive_path = os.path.join(WORKSPACE_ROOT, "BluePrint/06_구현_로드맵/아카이브/아카이브_완료내역.md")
+with open(archive_path, "r", encoding="utf-8") as f:
+    archive_content = f.read()
 
 parts_to_verify = [
     ("PART 1", "빅스비 캡슐 고도화"),
@@ -207,13 +208,16 @@ parts_to_verify = [
 ]
 
 for p_num, p_title in parts_to_verify:
-    has_part = p_num in md_content
-    check(f"구현.md 등록 완비: {p_num} ({p_title})", has_part)
+    has_part = p_num in archive_content
+    check(f"마일스톤 보존 완비: {p_num} ({p_title})", has_part)
 
-# PART 1~11 핵심 태스크 미완료 체크박스 [ ] 존재 여부 검사
-part1_to_11_content = md_content.split("PART 12")[0] if "PART 12" in md_content else md_content
-uncompleted_boxes = part1_to_11_content.count("- [ ]")
-check(f"PART 1~11 핵심 태스크 완료 상태 확인 (미완료 [ ] 개수: {uncompleted_boxes})", uncompleted_boxes == 0)
+# 구현.md 핵심 온디바이스 과제 상태 점검
+impl_path = os.path.join(WORKSPACE_ROOT, "BluePrint/06_구현_로드맵/구현.md")
+with open(impl_path, "r", encoding="utf-8") as f:
+    impl_content = f.read()
+
+uncompleted_boxes = impl_content.count("- [ ]")
+check(f"구현.md 실전 과제 완료 상태 확인 (미완료 [ ] 개수: {uncompleted_boxes})", uncompleted_boxes == 0)
 
 # =========================================================================
 # 검사 7. Step 2 모델 가져오기 방식 (SAF & 앱 전용 폴더) 완벽 무결성 검사

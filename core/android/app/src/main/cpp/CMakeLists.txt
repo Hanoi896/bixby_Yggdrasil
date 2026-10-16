@@ -11,6 +11,14 @@ set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Do not build server" FORCE)
 set(LLAMA_BUILD_COMMON OFF CACHE BOOL "Do not build common CLI tools" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static llama libraries" FORCE)
 
+# [과제 4 실전 구현] Snapdragon 8 Elite 하드웨어 가속 백엔드 활성화
+# 1. Vulkan GPU 가속 백엔드 활성화 (Adreno 830 GPU Attention/FFN 오프로딩)
+set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan GPU backend for Adreno GPU acceleration" FORCE)
+
+# 2. Qualcomm Hexagon HTP / QNN NPU 백엔드 활성화 (초저전력 1.2W 미만 고속 추론)
+set(GGML_HEXAGON ON CACHE BOOL "Enable Qualcomm Hexagon HTP NPU backend for Snapdragon 8 Elite" FORCE)
+set(GGML_HEXAGON_ARCH "v75;v79;v81" CACHE STRING "Target Hexagon NPU architectures" FORCE)
+
 # Snapdragon 8 Elite 및 ARMv8.4-A 최적화
 if (${ANDROID_ABI} STREQUAL "arm64-v8a")
     set(GGML_OPENMP OFF CACHE BOOL "Disable OpenMP on Android for battery/thermal care" FORCE)
@@ -26,6 +34,8 @@ if (EXISTS ${LLAMA_ROOT_DIR}/CMakeLists.txt)
     set(LLAMA_INCLUDE_DIRS
         ${LLAMA_ROOT_DIR}/include
         ${LLAMA_ROOT_DIR}/ggml/include
+        ${LLAMA_ROOT_DIR}/ggml/src/ggml-vulkan
+        ${LLAMA_ROOT_DIR}/ggml/src/ggml-hexagon
     )
 else()
     message(WARNING "llama.cpp submodule not found! Check .gitmodules or git submodule update.")
@@ -37,17 +47,18 @@ include_directories(
     ${LLAMA_INCLUDE_DIRS}
 )
 
-# 네이티브 JNI 및 로컬 데몬 라이브러리 타겟
+# 네이티브 JNI 라이브러리 타겟 (HTTP 소켓 서버 완전 제거, JNI 메모리 직결)
 add_library(yggdrasil_llm SHARED
     llama_jni_bridge.cpp
     ExaoneRuntime.cpp
-    LocalHttpServer.cpp
 )
 
 target_link_libraries(yggdrasil_llm
     PRIVATE
     llama
     ggml
+    vulkan
     android
     log
 )
+

@@ -10,12 +10,14 @@
  */
 
 import { YGGDRASIL_TOOLS, getToolSchema, validateToolArguments } from './YggdrasilTools.js';
+import { buildActionUri } from './YggdrasilConfig.js';
 
 // 복합 작업을 나누는 한국어 구문 접속사 패턴
 const CONJUNCTION_REGEX = /(?:그리고|한\s*다음(?:에)?|하고\s*나서|한\s*뒤(?:에)?|해서|하고|후에|(?<=[가-힣])고\s+)/g;
 
 /**
  * 사용자 발화를 분석하여 실행 계획(Execution Plan)을 생성합니다.
+ * (HTTP 소켓 서버 없이 100% Bixby 클라이언트 측 고속 한국어 구문 DAG 분해 및 Native Intent 직결)
  * @param {string} utterance 사용자의 원문 발화
  * @returns {object} 분해된 실행 계획 객체
  */
@@ -26,7 +28,7 @@ export function planTask(utterance) {
 
   const cleanText = utterance.trim();
 
-  // 1. 원자적 키워드 기반 복합 구문 분할 시도
+  // 1. 한국어 구문 접속사 기반 원자적 절(Clause) 분할
   const clauses = splitIntoClauses(cleanText);
   const isCompound = clauses.length > 1;
 
@@ -45,18 +47,25 @@ export function planTask(utterance) {
       originalUtterance: cleanText,
       isCompound: false,
       planDescription: `'${cleanText}' 자연어 질의 분석 및 브리핑`,
-      steps: []
+      steps: [],
+      appLaunchUri: buildActionUri('chat', { query: cleanText })
     };
   }
 
   // 2. 선행-후행 의존성 데이터 바인딩 ($output linking)
   linkStepDependencies(steps);
 
+  const planDesc = generatePlanDescription(steps);
   return {
     originalUtterance: cleanText,
     isCompound: steps.length > 1,
-    planDescription: generatePlanDescription(steps),
-    steps: steps
+    planDescription: planDesc,
+    steps: steps,
+    appLaunchUri: buildActionUri('execute_plan', {
+      utterance: cleanText,
+      isCompound: steps.length > 1,
+      steps: steps
+    })
   };
 }
 

@@ -1,0 +1,5 @@
+CompileFlags:
+  Add:
+    - -Icore/android/app/src/main/cpp/llama.cpp/include
+    - -Icore/android/app/src/main/cpp/llama.cpp/ggml/include
+    - -Icore/android/app/src/main/cpp

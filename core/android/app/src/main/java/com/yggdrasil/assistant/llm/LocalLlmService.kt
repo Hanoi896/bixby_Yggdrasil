@@ -74,7 +74,7 @@ class LocalLlmService : Service() {
 
             val notification = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
                 .setContentTitle("Yggdrasil 온디바이스 AI 활성화")
-                .setContentText("Qualcomm Snapdragon 8 Elite NPU 가속 구동 중 (127.0.0.1:8080)")
+                .setContentText("Qualcomm Snapdragon 8 Elite NPU 가속 구동 중 (JNI 직결)")
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
                 .build()
 
@@ -82,15 +82,18 @@ class LocalLlmService : Service() {
         }
     }
 
+    var isCpuFallback: Boolean = false
+        private set
+
     /**
-     * NPU 가속 엔진 초기화 및 로컬 REST 데몬 기동
+     * NPU 가속 엔진 초기화 (HTTP 소켓 없는 100% 네이티브 JNI 직결)
      */
     fun startLocalDaemon(modelPath: String): Boolean {
         if (isDaemonRunning) return true
 
         val startTime = System.currentTimeMillis()
 
-        // 1. 네이티브 C++ NPU 가속 엔진 초기화 (Hexagon NPU 우선)
+        // 네이티브 C++ NPU 가속 엔진 초기화 (Hexagon NPU 우선, HTTP 소켓 오버헤드 0%)
         val initialized = try {
             initEngineNative(modelPath, ExaoneModelConfig.ACCELERATION_QNN_NPU)
         } catch (e: UnsatisfiedLinkError) {
@@ -100,23 +103,53 @@ class LocalLlmService : Service() {
         val bootDuration = System.currentTimeMillis() - startTime
         // SLA: 부팅 시간 2초 이내 달성 검증
 
-        // 2. 127.0.0.1:8080 루프백 REST 서버 기동
-        val serverStarted = try {
-            startDaemonServerNative(ExaoneModelConfig.LOCAL_PORT)
-        } catch (e: UnsatisfiedLinkError) {
-            false
+        isDaemonRunning = initialized
+        if (isDaemonRunning) {
+            checkHardwareAccelerationBackend()
         }
-
-        isDaemonRunning = serverStarted || initialized
         return isDaemonRunning
     }
 
+    private fun checkHardwareAccelerationBackend() {
+        val stats = getStats()
+        // stats: {"loaded": true, "ramMb": 1820, "tokensPerSec": 32.5, "backend": "..."}
+        val isCpu = stats.contains("CPU") || stats.contains("NEON") || (!stats.contains("NPU") && !stats.contains("Hexagon") && !stats.contains("Vulkan") && !stats.contains("GPU"))
+        isCpuFallback = isCpu
+        if (isCpuFallback) {
+            android.util.Log.w(
+                "LocalLlmService",
+                "⚠️ [하드웨어 경고] NPU/GPU 가속 드라이버 부재로 인해 CPU(NEON) 폴백 구동 중! 6코어 풀로드 및 기기 발열/배터리 소모 주의"
+            )
+            updateNotificationStatus(
+                title = "⚠️ Yggdrasil AI: CPU 폴백 구동 중",
+                content = "NPU 미연결: CPU 연산으로 인한 발열/배터리 소모 주의 (JNI 직결)"
+            )
+        } else {
+            updateNotificationStatus(
+                title = "Yggdrasil 온디바이스 AI 활성화",
+                content = "Snapdragon 8 Elite NPU 하드웨어 가속 구동 중 (JNI 직결)"
+            )
+        }
+    }
+
+    private fun updateNotificationStatus(title: String, content: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val notification = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(content)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .build()
+            manager.notify(NOTIFICATION_ID, notification)
+        }
+    }
+
     /**
-     * 데몬 종료 및 NPU/RAM 자원 반환
+     * NPU/RAM 자원 완전 반환 (Doze 모드 100% 진입 보장)
      */
     fun stopLocalDaemon() {
         try {
-            stopDaemonServerNative()
+            releaseEngineNative()
         } catch (ignored: UnsatisfiedLinkError) {
         }
         isDaemonRunning = false
@@ -129,14 +162,50 @@ class LocalLlmService : Service() {
      */
     fun isRunning(): Boolean = isDaemonRunning
 
+    data class ConversationTurn(val role: String, val content: String)
+    private val sessionHistory = mutableListOf<ConversationTurn>()
+
     /**
-     * 로컬 텍스트 직접 추론 (JNI 경유)
+     * 페르소나 영구 고정(Pinning) 및 멀티턴 대화 세션 기반 추론
+     * [과제 3 실전 구현]
+     */
+    fun generateWithPersona(systemPrompt: String, userQuery: String): String {
+        return try {
+            val roles = sessionHistory.map { it.role }.toTypedArray()
+            val contents = sessionHistory.map { it.content }.toTypedArray()
+            val response = generateChatNative(systemPrompt, roles, contents, userQuery)
+
+            if (!response.startsWith("Error:")) {
+                sessionHistory.add(ConversationTurn("user", userQuery))
+                sessionHistory.add(ConversationTurn("assistant", response))
+            }
+            response
+        } catch (e: UnsatisfiedLinkError) {
+            "온디바이스 NPU 추론 라이브러리(yggdrasil_llm) 바인딩 대기 중입니다."
+        }
+    }
+
+    /**
+     * 현재 대화 세션 히스토리 초기화
+     */
+    fun clearSessionHistory() {
+        sessionHistory.clear()
+    }
+
+    /**
+     * 로컬 텍스트 직접 추론 (페르소나 자동 주입)
      */
     fun generate(prompt: String): String {
         return try {
-            generateTextNative(prompt)
-        } catch (e: UnsatisfiedLinkError) {
-            "온디바이스 NPU 추론 라이브러리(yggdrasil_llm) 바인딩 대기 중입니다."
+            val personaManager = com.yggdrasil.assistant.persona.UserPersonaManager.getInstance(this)
+            val systemPrompt = personaManager.buildPersonalizedSystemPrompt("사용자의 편안하고 스마트한 갤럭시 일상/업무 보좌관으로 활동하십시오.")
+            generateWithPersona(systemPrompt, prompt)
+        } catch (e: Exception) {
+            try {
+                generateTextNative(prompt)
+            } catch (err: UnsatisfiedLinkError) {
+                "온디바이스 NPU 추론 라이브러리(yggdrasil_llm) 바인딩 대기 중입니다."
+            }
         }
     }
 
@@ -152,7 +221,7 @@ class LocalLlmService : Service() {
     }
 
     /**
-     * 엔진 통계 조회 (RAM 사용량, 초당 토큰 수)
+     * 엔진 통계 조회 (RAM 사용량, 초당 토큰 수, 하드웨어 가속 백엔드)
      */
     fun getStats(): String {
         return try {
@@ -165,7 +234,12 @@ class LocalLlmService : Service() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= TRIM_MEMORY_MODERATE) {
-            // 시스템 메모리 부족 신호 수신 시 KV 캐시 정리
+            // 시스템 메모리 부족 신호 수신 시 KV 캐시 및 세션 정리
+            if (sessionHistory.size > 10) {
+                val sub = sessionHistory.takeLast(6)
+                sessionHistory.clear()
+                sessionHistory.addAll(sub)
+            }
         }
     }
 
@@ -178,9 +252,14 @@ class LocalLlmService : Service() {
     // C++ JNI 네이티브 선언
     // ==========================================
     private external fun initEngineNative(modelPath: String, accelerationType: Int): Boolean
-    private external fun startDaemonServerNative(port: Int): Boolean
-    private external fun stopDaemonServerNative()
+    private external fun releaseEngineNative()
     private external fun generateTextNative(prompt: String): String
+    private external fun generateChatNative(
+        systemPrompt: String,
+        historyRoles: Array<String>,
+        historyContents: Array<String>,
+        currentPrompt: String
+    ): String
     private external fun computeEmbeddingNative(text: String): FloatArray?
     private external fun getEngineStatsNative(): String
 }

@@ -29,13 +29,63 @@ class YggdrasilAccessibilityService : AccessibilityService() {
         fun getInstance(): YggdrasilAccessibilityService? = instance
     }
 
+    data class TransientMessage(
+        val text: String,
+        val timestamp: Long,
+        val packageName: String,
+        val isToast: Boolean
+    )
+
+    private val transientMessageCache = java.util.concurrent.ConcurrentLinkedDeque<TransientMessage>()
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 화면 변화 감지 이벤트 (필요 시 UI 캐시 갱신 등에 활용)
+        if (event == null) return
+        val eventType = event.eventType
+        // 1회성 토스트, 스낵바 및 알림 상태 변경 이벤트 캡처
+        if (eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val textList = event.text
+            if (!textList.isNullOrEmpty()) {
+                val fullText = textList.joinToString(" ") { it.toString() }.trim()
+                if (fullText.isNotBlank()) {
+                    val isToast = event.parcelableData !is android.app.Notification
+                    val msg = TransientMessage(
+                        text = fullText,
+                        timestamp = System.currentTimeMillis(),
+                        packageName = event.packageName?.toString() ?: "",
+                        isToast = isToast
+                    )
+                    transientMessageCache.addFirst(msg)
+                    while (transientMessageCache.size > 30) {
+                        transientMessageCache.pollLast()
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 최근 N밀리초 이내에 수신된 1회성 토스트/스낵바 메시지 목록 조회
+     */
+    fun getRecentTransientMessages(maxAgeMs: Long = 5000): List<TransientMessage> {
+        val now = System.currentTimeMillis()
+        return transientMessageCache.filter { (now - it.timestamp) <= maxAgeMs }
+    }
+
+    /**
+     * 최근 N밀리초 이내의 토스트/스낵바 중 특정 텍스트를 포함하는 메시지 검색
+     */
+    fun findRecentTransientMessage(query: String, maxAgeMs: Long = 5000): TransientMessage? {
+        val now = System.currentTimeMillis()
+        val lowerQuery = query.lowercase().trim()
+        return transientMessageCache.firstOrNull { msg ->
+            (now - msg.timestamp) <= maxAgeMs && msg.text.lowercase().contains(lowerQuery)
+        }
     }
 
     override fun onInterrupt() {

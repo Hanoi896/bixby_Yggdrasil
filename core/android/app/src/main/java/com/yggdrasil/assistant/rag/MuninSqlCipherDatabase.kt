@@ -23,7 +23,7 @@ class MuninSqlCipherDatabase(
 
     companion object {
         const val DATABASE_NAME = "yggdrasil_munin_encrypted.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 3
 
         const val TABLE_MEMORIES = "memories"
         const val COL_ID = "id"
@@ -33,6 +33,27 @@ class MuninSqlCipherDatabase(
         const val COL_TIMESTAMP = "timestamp"
         const val COL_IMPORTANCE = "importance"
         const val COL_IS_DIALOGUE = "is_dialogue"
+
+        // 감사 로그 해시 체인 테이블
+        const val TABLE_AUDIT = "audit_log_chain"
+        const val COL_AUDIT_INDEX = "block_index"
+        const val COL_AUDIT_TIME = "timestamp"
+        const val COL_AUDIT_ACTION = "action_type"
+        const val COL_AUDIT_LEVEL = "security_level"
+        const val COL_AUDIT_REALM = "realm"
+        const val COL_AUDIT_DETAILS = "details"
+        const val COL_AUDIT_PREV_HASH = "previous_hash"
+        const val COL_AUDIT_HASH = "hash"
+        const val COL_AUDIT_STATUS = "status"
+
+        // 실시간 수집 알림 영속 테이블
+        const val TABLE_NOTIFICATIONS = "captured_notifications"
+        const val COL_NOTI_ID = "id"
+        const val COL_NOTI_PKG = "package_name"
+        const val COL_NOTI_APP = "app_name"
+        const val COL_NOTI_TITLE = "title"
+        const val COL_NOTI_CONTENT = "content"
+        const val COL_NOTI_TIME = "timestamp"
 
         // 1차 인덱스 스캔 후보군 풀 최대 크기 (ANR 원천 차단)
         private const val MAX_CANDIDATE_POOL = 300
@@ -49,6 +70,27 @@ class MuninSqlCipherDatabase(
         val importance: Int,
         val isDialogue: Boolean,
         val similarity: Float = 0f
+    )
+
+    data class DbAuditBlock(
+        val index: Long,
+        val timestamp: String,
+        val actionType: String,
+        val securityLevel: String,
+        val realm: String,
+        val details: String,
+        val previousHash: String,
+        val hash: String,
+        val status: String
+    )
+
+    data class DbNotification(
+        val id: Long = 0,
+        val packageName: String,
+        val appName: String,
+        val title: String,
+        val content: String,
+        val timestamp: Long
     )
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -70,12 +112,67 @@ class MuninSqlCipherDatabase(
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_time ON $TABLE_MEMORIES($COL_TIMESTAMP DESC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_cat_time ON $TABLE_MEMORIES($COL_CATEGORY, $COL_TIMESTAMP DESC)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_imp ON $TABLE_MEMORIES($COL_IMPORTANCE DESC, $COL_TIMESTAMP DESC)")
+
+        // 감사 로그 체인 테이블 생성
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $TABLE_AUDIT (
+                $COL_AUDIT_INDEX INTEGER PRIMARY KEY,
+                $COL_AUDIT_TIME TEXT NOT NULL,
+                $COL_AUDIT_ACTION TEXT NOT NULL,
+                $COL_AUDIT_LEVEL TEXT NOT NULL,
+                $COL_AUDIT_REALM TEXT NOT NULL,
+                $COL_AUDIT_DETAILS TEXT NOT NULL,
+                $COL_AUDIT_PREV_HASH TEXT NOT NULL,
+                $COL_AUDIT_HASH TEXT NOT NULL,
+                $COL_AUDIT_STATUS TEXT NOT NULL
+            )
+        """.trimIndent())
+
+        // 알림 영속 테이블 생성
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $TABLE_NOTIFICATIONS (
+                $COL_NOTI_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_NOTI_PKG TEXT NOT NULL,
+                $COL_NOTI_APP TEXT NOT NULL,
+                $COL_NOTI_TITLE TEXT NOT NULL,
+                $COL_NOTI_CONTENT TEXT NOT NULL,
+                $COL_NOTI_TIME INTEGER NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_noti_time ON $TABLE_NOTIFICATIONS($COL_NOTI_TIME DESC)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // v1 -> v2 마이그레이션: 고속 인덱스 추가 생성
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_cat_time ON $TABLE_MEMORIES($COL_CATEGORY, $COL_TIMESTAMP DESC)")
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_imp ON $TABLE_MEMORIES($COL_IMPORTANCE DESC, $COL_TIMESTAMP DESC)")
+        if (oldVersion < 2) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_cat_time ON $TABLE_MEMORIES($COL_CATEGORY, $COL_TIMESTAMP DESC)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_memories_imp ON $TABLE_MEMORIES($COL_IMPORTANCE DESC, $COL_TIMESTAMP DESC)")
+        }
+        if (oldVersion < 3) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_AUDIT (
+                    $COL_AUDIT_INDEX INTEGER PRIMARY KEY,
+                    $COL_AUDIT_TIME TEXT NOT NULL,
+                    $COL_AUDIT_ACTION TEXT NOT NULL,
+                    $COL_AUDIT_LEVEL TEXT NOT NULL,
+                    $COL_AUDIT_REALM TEXT NOT NULL,
+                    $COL_AUDIT_DETAILS TEXT NOT NULL,
+                    $COL_AUDIT_PREV_HASH TEXT NOT NULL,
+                    $COL_AUDIT_HASH TEXT NOT NULL,
+                    $COL_AUDIT_STATUS TEXT NOT NULL
+                )
+            """.trimIndent())
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_NOTIFICATIONS (
+                    $COL_NOTI_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_NOTI_PKG TEXT NOT NULL,
+                    $COL_NOTI_APP TEXT NOT NULL,
+                    $COL_NOTI_TITLE TEXT NOT NULL,
+                    $COL_NOTI_CONTENT TEXT NOT NULL,
+                    $COL_NOTI_TIME INTEGER NOT NULL
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_noti_time ON $TABLE_NOTIFICATIONS($COL_NOTI_TIME DESC)")
+        }
     }
 
     /**
@@ -205,4 +302,113 @@ class MuninSqlCipherDatabase(
             if (it.moveToFirst()) it.getLong(0) else 0L
         }
     }
+
+    // ==========================================
+    // 감사 로그 해시 체인 영속화 메서드
+    // ==========================================
+
+    fun insertAuditBlock(block: DbAuditBlock): Boolean {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_AUDIT_INDEX, block.index)
+            put(COL_AUDIT_TIME, block.timestamp)
+            put(COL_AUDIT_ACTION, block.actionType)
+            put(COL_AUDIT_LEVEL, block.securityLevel)
+            put(COL_AUDIT_REALM, block.realm)
+            put(COL_AUDIT_DETAILS, block.details)
+            put(COL_AUDIT_PREV_HASH, block.previousHash)
+            put(COL_AUDIT_HASH, block.hash)
+            put(COL_AUDIT_STATUS, block.status)
+        }
+        val rowId = db.insertWithOnConflict(TABLE_AUDIT, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        return rowId != -1L
+    }
+
+    fun loadAllAuditBlocks(): List<DbAuditBlock> {
+        val db = readableDatabase
+        val cursor = db.query(TABLE_AUDIT, null, null, null, null, null, "$COL_AUDIT_INDEX ASC")
+        val list = mutableListOf<DbAuditBlock>()
+        cursor.use {
+            val idx = it.getColumnIndexOrThrow(COL_AUDIT_INDEX)
+            val time = it.getColumnIndexOrThrow(COL_AUDIT_TIME)
+            val action = it.getColumnIndexOrThrow(COL_AUDIT_ACTION)
+            val level = it.getColumnIndexOrThrow(COL_AUDIT_LEVEL)
+            val realm = it.getColumnIndexOrThrow(COL_AUDIT_REALM)
+            val details = it.getColumnIndexOrThrow(COL_AUDIT_DETAILS)
+            val prev = it.getColumnIndexOrThrow(COL_AUDIT_PREV_HASH)
+            val hash = it.getColumnIndexOrThrow(COL_AUDIT_HASH)
+            val status = it.getColumnIndexOrThrow(COL_AUDIT_STATUS)
+
+            while (it.moveToNext()) {
+                list.add(
+                    DbAuditBlock(
+                        index = it.getLong(idx),
+                        timestamp = it.getString(time),
+                        actionType = it.getString(action),
+                        securityLevel = it.getString(level),
+                        realm = it.getString(realm),
+                        details = it.getString(details),
+                        previousHash = it.getString(prev),
+                        hash = it.getString(hash),
+                        status = it.getString(status)
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    // ==========================================
+    // 스마트 알림 영속화 메서드
+    // ==========================================
+
+    fun insertNotification(noti: DbNotification): Long {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_NOTI_PKG, noti.packageName)
+            put(COL_NOTI_APP, noti.appName)
+            put(COL_NOTI_TITLE, noti.title)
+            put(COL_NOTI_CONTENT, noti.content)
+            put(COL_NOTI_TIME, noti.timestamp)
+        }
+        return db.insert(TABLE_NOTIFICATIONS, null, values)
+    }
+
+    fun loadRecentNotifications(limit: Int = 100): List<DbNotification> {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_NOTIFICATIONS,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "$COL_NOTI_TIME DESC",
+            limit.toString()
+        )
+        val list = mutableListOf<DbNotification>()
+        cursor.use {
+            val idIdx = it.getColumnIndexOrThrow(COL_NOTI_ID)
+            val pkgIdx = it.getColumnIndexOrThrow(COL_NOTI_PKG)
+            val appIdx = it.getColumnIndexOrThrow(COL_NOTI_APP)
+            val titleIdx = it.getColumnIndexOrThrow(COL_NOTI_TITLE)
+            val contentIdx = it.getColumnIndexOrThrow(COL_NOTI_CONTENT)
+            val timeIdx = it.getColumnIndexOrThrow(COL_NOTI_TIME)
+
+            while (it.moveToNext()) {
+                list.add(
+                    DbNotification(
+                        id = it.getLong(idIdx),
+                        packageName = it.getString(pkgIdx),
+                        appName = it.getString(appIdx),
+                        title = it.getString(titleIdx),
+                        content = it.getString(contentIdx),
+                        timestamp = it.getLong(timeIdx)
+                    )
+                )
+            }
+        }
+        return list
+    }
 }
+

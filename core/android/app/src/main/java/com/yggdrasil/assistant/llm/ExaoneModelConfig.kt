@@ -21,7 +21,8 @@ object ExaoneModelConfig {
     const val TARGET_MIN_TOKENS_PER_SEC = 30f // 초당 최소 30 토큰 이상 스트리밍
     const val TARGET_MAX_TOKENS_PER_SEC = 45f // 초당 최대 45 토큰
 
-    // 로컬 REST 데몬 바인딩 설정
-    const val LOCAL_HOST = "127.0.0.1"
-    const val LOCAL_PORT = 8080
+    // Android Native Intent 딥링크 스키마 설정
+    const val INTENT_URI_SCHEME = "yggdrasil"
+    const val INTENT_HOST_ACTION = "action"
+    const val INTENT_HOST_CHAT = "chat"
 }

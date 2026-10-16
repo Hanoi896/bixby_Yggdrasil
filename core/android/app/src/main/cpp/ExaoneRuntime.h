@@ -11,9 +11,9 @@
  * 퀄컴 스냅드래곤 8 엘리트 AP 가속 백엔드 열거형
  */
 enum class HardwareAccelerationType {
-    QNN_NPU,      // Qualcomm Hexagon NPU (초저전력, 최고 속도)
-    VULKAN_GPU,   // Adreno GPU Vulkan 백엔드
-    CPU_NEON      // ARMv8 NEON/FP16 폴백
+    QNN_NPU,      // Qualcomm Hexagon HTP/QNN NPU (초저전력, 최고 속도)
+    VULKAN_GPU,   // Qualcomm Adreno 830 GPU Vulkan 백엔드
+    CPU_NEON      // ARMv8.4-A NEON/FP16 6코어 CPU 폴백
 };
 
 struct ExaoneConfig {
@@ -21,10 +21,11 @@ struct ExaoneConfig {
     HardwareAccelerationType acceleration = HardwareAccelerationType::QNN_NPU;
     int32_t contextLength = 4096;
     int32_t threadCount = 6;      // S26 Ultra 고성능 코어 수
-    int32_t gpuLayers = 32;       // NPU/GPU 전체 오프로딩
+    int32_t gpuLayers = 32;       // NPU/GPU 전체 32 레이어 오프로딩
     bool useMmap = true;          // 2초 내 고속 부팅을 위한 mmap 활성화
     float temperature = 0.2f;
     float topP = 0.9f;
+    int32_t maxPredictionTokens = 1024; // 모바일 최대 생성 토큰 수
 };
 
 struct ChatMessage {
@@ -42,7 +43,7 @@ public:
     ~ExaoneRuntime();
 
     /**
-     * 모델 초기화 및 메모리 로드 (mmap & NPU 가속)
+     * 모델 초기화 및 메모리 로드 (mmap & NPU/GPU 가속)
      * @return 로드 소요 시간(ms)
      */
     int64_t initialize(const ExaoneConfig& config);
@@ -54,6 +55,7 @@ public:
 
     /**
      * 챗 스트리밍 추론 실행
+     * (Stop Sequence 인터셉터 및 시스템 프롬프트 Pinning 적용)
      * @param messages 대화 히스토리 리스트
      * @param onTokenReceived 토큰 실시간 스트리밍 콜백
      * @return 전체 생성된 텍스트
@@ -71,11 +73,22 @@ public:
 
     /**
      * 텍스트의 고차원 시맨틱 임베딩 텐서 추출 (RAG 의미 검색용)
-     * llama_decode 후 hidden states로부터 L2 정규화된 밀집 벡터(Dense Embedding) 반환
-     * @param text 입력 문장 또는 단락
-     * @return L2 정규화된 float 임베딩 벡터
      */
     std::vector<float> computeEmbedding(const std::string& text);
+
+    /**
+     * 특수 제어 토큰 마크업 클렌징
+     * [|endofturn|], [|user|], [|assistant|], [|system|] 등 필터링
+     */
+    static std::string cleanseSpecialTokens(const std::string& rawText);
+
+    /**
+     * 4096-ctx 초과 방지 시스템 프롬프트(페르소나) 영구 고정 및 중간 대화 자동 요약
+     */
+    std::vector<ChatMessage> pinSystemPromptAndSlidingWindow(
+        const std::vector<ChatMessage>& messages,
+        int32_t maxBudgetTokens
+    );
 
     /**
      * 현재 엔진 상태 조회
@@ -83,6 +96,7 @@ public:
     bool isLoaded() const;
     float getInferenceTokensPerSec() const;
     size_t getEstimatedRamUsageMb() const;
+    std::string getActiveBackendName() const;
 
 private:
     class Impl;
