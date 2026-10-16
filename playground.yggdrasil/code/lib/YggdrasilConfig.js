@@ -30,3 +30,28 @@ export function buildActionUri(action, payload) {
 export function buildChatUri(query) {
   return `${DEEP_LINK_SCHEME}://chat?query=${encodeURIComponent(query || '')}`;
 }
+
+/**
+ * Android 네이티브 기억 보관소 딥링크 URI 빌더
+ * @param {string} query 검색할 기억 쿼리
+ * @returns {string} yggdrasil://archive URI
+ */
+export function buildArchiveUri(query) {
+  return `${DEEP_LINK_SCHEME}://archive?query=${encodeURIComponent(query || '')}`;
+}
+
+/**
+ * Android 네이티브 관제 상태 딥링크 URI 빌더
+ * @returns {string} yggdrasil://status URI
+ */
+export function buildStatusUri() {
+  return `${DEEP_LINK_SCHEME}://status`;
+}
+
+/**
+ * Android 네이티브 설정 딥링크 URI 빌더
+ * @returns {string} yggdrasil://settings URI
+ */
+export function buildSettingsUri() {
+  return `${DEEP_LINK_SCHEME}://settings`;
+}

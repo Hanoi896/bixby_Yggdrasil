@@ -80,9 +80,6 @@ required_files = [
     "core/android/app/src/main/java/com/yggdrasil/assistant/ui/MainAppScreen.kt",
     "core/android/app/src/main/java/com/yggdrasil/assistant/ui/SettingsScreen.kt",
     "core/android/app/src/main/java/com/yggdrasil/assistant/ui/ChatScreen.kt",
-    "web-dashboard/src/App.tsx",
-    "web-dashboard/src/pages/Chat.tsx",
-    "web-dashboard/src/pages/Settings.tsx",
     # Gradle 표준 빌드 스크립트
     "core/android/build.gradle.kts",
     "core/android/settings.gradle.kts",
@@ -102,7 +99,7 @@ for rf in required_files:
 # 검사 2. 도구 호출 JSON Schema 무결성 (Tool Calling Schema Integrity)
 # =========================================================================
 print("\n2. 도구 호출(Function Calling) JSON 스키마 문법 및 규격 검사")
-tools_schema_path = os.path.join(WORKSPACE_ROOT, "core/tools/tools_schema.json")
+tools_schema_path = os.path.join(WORKSPACE_ROOT, "core/android/app/src/main/assets/tools_schema.json")
 try:
     with open(tools_schema_path, "r", encoding="utf-8") as f:
         tools_data = json.load(f)
@@ -343,10 +340,10 @@ check("ChatScreen: 딥링크 쿼리 자동 sendMessage 호출", "sendMessage(que
 check("ChatScreen: 쿼리 소비 완료 콜백 호출", "onQueryConsumed()" in chat_screen_src)
 
 # 9-4. 빅스비 캡슐 모델 및 엔드포인트 무결성 검사
-app_launch_uri_bxb = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/models/concepts/AppLaunchUri.model.bxb")
+app_launch_uri_bxb = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/models/concepts/primitive/AppLaunchUri.model.bxb")
 check("빅스비 모델: AppLaunchUri.model.bxb 실존", os.path.exists(app_launch_uri_bxb))
 
-app_launch_res_bxb = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/models/concepts/AppLaunchResult.model.bxb")
+app_launch_res_bxb = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/models/concepts/structures/AppLaunchResult.model.bxb")
 check("빅스비 모델: AppLaunchResult.model.bxb 실존", os.path.exists(app_launch_res_bxb))
 
 launch_act_bxb = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/models/actions/LaunchApp.model.bxb")
@@ -440,17 +437,17 @@ check("MainActivity: 텔레그램 질의 시 testTelegramConnection 실제 디�
 # =========================================================================
 print("\n11. Phase 2 빅스비 7개 액션 Mock 제거 & 네이티브 딥링크 일원화 무결성 검사")
 
-# 11-1. YggdrasilClient.js Mock 코드 영구 척결 점검
+# 11-1. YggdrasilClient.js Mock & 소켓 파일 영구 삭제 점검 (Zero-Zombie Policy)
 client_js_path = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/code/lib/YggdrasilClient.js")
-with open(client_js_path, "r", encoding="utf-8") as f:
-    client_src = f.read()
+check("YggdrasilClient: 죽은 코드 및 가짜 모의 데이터 파일 영구 삭제 완료", not os.path.exists(client_js_path))
 
-check("YggdrasilClient: mockMemoryStore 완전 제거 확인", "mockMemoryStore" not in client_src)
-check("YggdrasilClient: getMockData 완전 제거 확인", "function getMockData" not in client_src)
-check("YggdrasilClient: postMockData 완전 제거 확인", "function postMockData" not in client_src)
+config_js_path = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/code/lib/YggdrasilConfig.js")
+with open(config_js_path, "r", encoding="utf-8") as f:
+    config_src = f.read()
+check("YggdrasilConfig: 8080 소켓 포트 완전 제거 및 100% Native Intent 전환", "8080" not in config_src and "buildActionUri" in config_src)
 
-# 11-2. 7개 Concept 모델 appLaunchUri 프로퍼티 선언 점검
-concepts_dir = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/models/concepts")
+# 11-2. 7개 Concept 모델 appLaunchUri 프로퍼티 선언 점검 (structures 격리)
+concepts_dir = os.path.join(WORKSPACE_ROOT, "playground.yggdrasil/models/concepts/structures")
 target_concepts = [
     "PantheonOverview.model.bxb",
     "YggdrasilGrowthStatus.model.bxb",

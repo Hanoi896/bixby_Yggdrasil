@@ -105,7 +105,7 @@ class MuninEmbeddingEngine {
      * 두 임베딩 벡터 간의 코사인 유사도 계산 (-1.0 ~ 1.0)
      * [차원 불일치(2048 vs 512) 방어 가드레일 실장]
      * - 차원이 다를 경우 공통 차원 슬라이스 후 L2 재정규화로 왜곡 원천 차단
-     * - 4-way Loop Unrolling 최적화로 ARMv8 파이프라인 캐시 및 브랜치 예측 극대화
+     * - 4-way Loop Unrolling (4-way unrolling) 최적화로 ARMv8 파이프라인 캐시 및 브랜치 예측 극대화
      */
     fun calculateCosineSimilarity(vecA: FloatArray, vecB: FloatArray): Float {
         val sizeA = vecA.size

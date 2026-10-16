@@ -61,7 +61,16 @@ Java_com_yggdrasil_assistant_llm_LocalLlmService_initEngineNative(
     jstring modelPath_,
     jint accelerationType
 ) {
+    if (!modelPath_) {
+        LOGE("JNI initEngineNative: modelPath_ is null");
+        return JNI_FALSE;
+    }
+
     const char *modelPath = env->GetStringUTFChars(modelPath_, nullptr);
+    if (!modelPath) {
+        LOGE("JNI initEngineNative: GetStringUTFChars returned null");
+        return JNI_FALSE;
+    }
 
     ExaoneConfig config;
     config.modelPath = modelPath;
@@ -99,9 +108,13 @@ Java_com_yggdrasil_assistant_llm_LocalLlmService_generateTextNative(
         return env->NewStringUTF("Error: Model not loaded");
     }
 
+    if (!prompt_) {
+        return env->NewStringUTF("Error: Null prompt");
+    }
+
     const char *prompt = env->GetStringUTFChars(prompt_, nullptr);
     if (!prompt) {
-        return env->NewStringUTF("Error: Invalid prompt");
+        return env->NewStringUTF("Error: Invalid prompt memory");
     }
 
     std::vector<ChatMessage> messages = {
@@ -219,7 +232,10 @@ static jfloatArray computeEmbeddingInternal(JNIEnv *env, jstring text_) {
     }
 
     const char *text = env->GetStringUTFChars(text_, nullptr);
-    std::string textStr(text ? text : "");
+    if (!text) {
+        return nullptr;
+    }
+    std::string textStr(text);
     env->ReleaseStringUTFChars(text_, text);
 
     if (textStr.empty()) {
