@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.yggdrasil.assistant"
     compileSdk = 35
+    ndkVersion = "30.0.16248370"
 
     defaultConfig {
         applicationId = "com.yggdrasil.assistant"
@@ -67,7 +68,7 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            version = "4.1.2"
         }
     }
 
