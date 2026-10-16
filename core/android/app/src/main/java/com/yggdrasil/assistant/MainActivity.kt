@@ -79,6 +79,9 @@ class MainActivity : ComponentActivity() {
         val breakGlassManager = BreakGlassSecurityManager.getInstance(this)
         val modelSyncManager = ModelAutoSyncManager.getInstance(this)
 
+        // 화면 꺼짐(Screen-off) 및 잠금화면 상태에서 빅스비 딥링크 호출 시 안정적 화면 표시 및 잠금 해제 요청
+        configureShowOnLockScreen()
+
         // 온디바이스 음성 피드백을 위한 TTS 초기화
         initTextToSpeech()
 
@@ -162,16 +165,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        // 앱이 이미 포그라운드/백그라운드에 떠있을 때 새 딥링크 인텐트 처리
-        handleDeepLink(intent)
-    }
-
-    /**
     private var tts: android.speech.tts.TextToSpeech? = null
     private var isTtsReady = false
+
+    private fun configureShowOnLockScreen() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+            keyguardManager?.requestDismissKeyguard(this, null)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            )
+        }
+    }
 
     private fun initTextToSpeech() {
         tts = android.speech.tts.TextToSpeech(this) { status ->
@@ -191,9 +203,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // 앱이 이미 포그라운드/백그라운드에 떠있을 때 새 딥링크 인텐트 처리
         handleDeepLink(intent)
     }
 
@@ -213,7 +226,7 @@ class MainActivity : ComponentActivity() {
             when (host) {
                 "action" -> {
                     pendingTargetTab.value = 0
-                    val actionName = uri.getQueryParameter("name") ?: "execute"
+                    val actionName = uri.getQueryParameter("name") ?: uri.getQueryParameter("type") ?: "execute"
                     val payload = uri.getQueryParameter("payload") ?: ""
                     android.util.Log.i("MainActivity", "빅스비 Native Action 수신: $actionName, payload: $payload")
                     pendingDeepLinkQuery.value = "[액션 실행] $actionName: $payload"

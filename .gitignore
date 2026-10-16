@@ -1,16 +1,32 @@
-# Large Model Files (1.4GB+)
+# Large AI Model Files (1.4GB+ NPU Weights)
 *.gguf
 *.bin
 *.onnx
 models/*.gguf
 core/android/app/src/main/assets/models/*.gguf
 
-# Build & Temporary Files
-__pycache__/
-*.pyc
+# Android & Gradle Build Artifacts
 build/
 .gradle/
 local.properties
 *.log
-scratch/
+*.hprof
+
+# C++ & CMake Artifacts
+.cxx/
+CMakeFiles/
+CMakeCache.txt
+*.so
+
+# Python & Environment
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# OS & Editor Temporary Files
+.DS_Store
+Thumbs.db
+*.swp
 temp/

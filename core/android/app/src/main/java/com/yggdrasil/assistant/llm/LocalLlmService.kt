@@ -9,16 +9,16 @@ import android.content.Intent
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.speech.tts.TextToSpeech
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.File
+import java.util.Locale
 
 /**
  * LocalLlmService
  * 갤럭시 S26 울트라 온디바이스 NPU 백그라운드 상주 데몬 서비스
- * 
- * 1. Snapdragon 8 Elite Hexagon NPU 및 Vulkan 가속 드라이버 로드
- * 2. LG EXAONE 3.0 2.4B Q4_K_M 모델을 mmap으로 2초 내 고속 마운트
- * 3. 기기 내부 127.0.0.1:8080 루프백 REST HTTP 서버 구동
- * 4. RAM 점유율 2.5GB 이하 엄격 통제 및 OOM 방지
  */
 class LocalLlmService : Service() {
 
@@ -42,9 +42,70 @@ class LocalLlmService : Service() {
         private const val NOTIFICATION_ID = 1001
     }
 
+    private var tts: TextToSpeech? = null
+    private var isTtsReady = false
+    private val pendingTtsQueue = java.util.concurrent.ConcurrentLinkedQueue<String>()
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+    private val serviceScope = CoroutineScope(Dispatchers.Default)
+
     override fun onCreate() {
         super.onCreate()
+        initWakeLock()
         startForegroundServiceWithNotification()
+        initTextToSpeech()
+    }
+
+    private fun initWakeLock() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        wakeLock = powerManager?.newWakeLock(
+            android.os.PowerManager.PARTIAL_WAKE_LOCK,
+            "Yggdrasil:LocalLlmServiceWakeLock"
+        )?.apply {
+            setReferenceCounted(false)
+        }
+    }
+
+    private fun initTextToSpeech() {
+        tts = TextToSpeech(applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.KOREAN
+                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        releaseWakeLockSafely()
+                    }
+                    override fun onError(utteranceId: String?) {
+                        releaseWakeLockSafely()
+                    }
+                })
+                isTtsReady = true
+                // 대기 중인 발화 플러시
+                while (!pendingTtsQueue.isEmpty()) {
+                    val queuedText = pendingTtsQueue.poll() ?: break
+                    speakHeadless(queuedText)
+                }
+            }
+        }
+    }
+
+    private fun acquireWakeLockSafely(timeoutMs: Long = 15_000L) {
+        try {
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire(timeoutMs)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("LocalLlmService", "WakeLock 획득 실패: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLockSafely() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("LocalLlmService", "WakeLock 해제 오류: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -52,7 +113,54 @@ class LocalLlmService : Service() {
             ?: File(filesDir, "models/${ExaoneModelConfig.MODEL_FILE_NAME}").absolutePath
 
         startLocalDaemon(modelPath)
+
+        // 화면 꺼짐(Screen-off) 상태 헤드리스 음성 질의 및 액션 디스패치
+        val headlessQuery = intent?.getStringExtra("HEADLESS_QUERY")
+        val actionName = intent?.getStringExtra("ACTION_NAME")
+        if (!headlessQuery.isNullOrBlank()) {
+            acquireWakeLockSafely(15_000L)
+            executeHeadlessQuery(headlessQuery)
+        } else if (!actionName.isNullOrBlank()) {
+            acquireWakeLockSafely(15_000L)
+            val payload = intent.getStringExtra("ACTION_PAYLOAD") ?: ""
+            executeHeadlessAction(actionName, payload)
+        }
+
         return START_STICKY // 안드로이드 시스템에 의해 종료 시 자동 재기동
+    }
+
+    /**
+     * 화면을 켜지 않고 백그라운드에서 NPU 추론 후 0ms 음성(TTS)으로 즉각 피드백
+     */
+    fun executeHeadlessQuery(query: String) {
+        serviceScope.launch(Dispatchers.Default) {
+            try {
+                val systemPrompt = "당신은 갤럭시 S26 울트라 온디바이스 개인 비서 Yggdrasil입니다. 사용자의 요청에 대해 간결하고 자연스럽게 한국어로 답변하십시오."
+                val reply = generateWithPersona(systemPrompt, query)
+                speakHeadless(reply)
+            } catch (e: Exception) {
+                speakHeadless("음성 답변 생성 중 오류가 발생했습니다.")
+                releaseWakeLockSafely()
+            }
+        }
+    }
+
+    fun executeHeadlessAction(actionName: String, payload: String) {
+        serviceScope.launch(Dispatchers.Default) {
+            try {
+                speakHeadless("$actionName 작업을 시작합니다.")
+            } catch (e: Exception) {
+                releaseWakeLockSafely()
+            }
+        }
+    }
+
+    private fun speakHeadless(text: String) {
+        if (!isTtsReady || tts == null) {
+            pendingTtsQueue.offer(text)
+            return
+        }
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "yggdrasil_headless_tts")
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

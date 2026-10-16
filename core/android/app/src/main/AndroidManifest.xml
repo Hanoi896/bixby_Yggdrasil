@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- 2. 구글 캘린더 & 주소록 연동 권한 -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
@@ -32,17 +35,22 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:theme="@android:style/Theme.Material.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- 빅스비 캡슐 앱 실행 및 딥링크 핸들러 (yggdrasil://chat?query=..., yggdrasil://launch) -->
+            <!-- 빅스비 캡슐 앱 실행 및 딥링크 핸들러 (yggdrasil://action, chat, launch, status, archive, settings) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="yggdrasil"
+                    android:host="action" />
                 <data
                     android:scheme="yggdrasil"
                     android:host="chat" />
@@ -60,6 +68,26 @@
                     android:host="settings" />
             </intent-filter>
         </activity>
+
+        <!-- 화면 꺼짐(Screen-off) 상태 헤드리스 음성 질의 수신 브로드캐스트 리시버 -->
+        <receiver
+            android:name=".integration.YggdrasilHeadlessReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.yggdrasil.assistant.action.HEADLESS_QUERY" />
+                <action android:name="com.yggdrasil.assistant.action.HEADLESS_EXECUTE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data
+                    android:scheme="yggdrasil"
+                    android:host="action" />
+                <data
+                    android:scheme="yggdrasil"
+                    android:host="chat" />
+            </intent-filter>
+        </receiver>
 
         <!-- 접근성 서비스 (화면 자동 조작 및 터치) -->
         <service
@@ -98,7 +126,12 @@
         <!-- 온디바이스 NPU 백그라운드 서비스 (C++ 데몬) -->
         <service
             android:name=".llm.LocalLlmService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="On-device NPU continuous AI assistant and headless voice synthesis" />
+        </service>
 
     </application>
 

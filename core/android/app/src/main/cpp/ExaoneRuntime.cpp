@@ -62,6 +62,9 @@ public:
   struct llama_sampler *smpl = nullptr;
   std::mutex generateMutex;
 
+  // [과제 17 실전 구현] 매턴 KV 캐시 증발 방어 및 증분 캐시(Incremental Cache) 보존 버퍼
+  std::vector<llama_token> prev_tokens;
+
   // 2. 임베딩(RAG) 전용 런타임 (독립 컨텍스트 & 독립 뮤텍스)
   struct llama_context *ctx_embd = nullptr;
   std::mutex embeddingMutex;
@@ -195,6 +198,7 @@ public:
     llama_backend_free();
     loaded = false;
     vocab = nullptr;
+    prev_tokens.clear();
     LOGI("EXAONE 듀얼 컨텍스트 추론 엔진 메모리 자원 완전 해제 완료");
   }
 
@@ -378,17 +382,49 @@ public:
       }
     }
 
-    // 4. 생성 컨텍스트 KV 캐시 메모리 초기화
+    // 4. [과제 17 실전 구현] 매턴 KV 캐시 증발 방어 및 증분 캐시(Incremental Cache) 재사용
     llama_memory_t mem = llama_get_memory(ctx_gen);
-    if (mem) {
-      llama_memory_clear(mem, true);
+    int n_common = 0;
+    if (mem && !prev_tokens.empty()) {
+      while (n_common < static_cast<int>(prev_tokens.size()) &&
+             n_common < n_tokens &&
+             prev_tokens[n_common] == prompt_tokens[n_common]) {
+        n_common++;
+      }
     }
 
-    // 5. 초기 프롬프트 배치 디코딩 (Prefill)
-    struct llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens);
-    if (llama_decode(ctx_gen, batch) != 0) {
-      LOGE("프롬프트 llama_decode 사전 처리 실패");
-      return "Error: failed to decode prompt into KV cache";
+    if (n_common > 0 && mem) {
+      // 공통 접두사(시스템 프롬프트, 직전 대화 등) 이후의 토큰만 KV 캐시에서 절단
+      llama_memory_seq_rm(mem, 0, n_common, -1);
+      LOGI("⚡ [증분 KV 캐시] 공통 토큰 %d개 보존 (신규 디코딩: %d개, TTFT 80%% 단축)",
+           n_common, n_tokens - n_common);
+    } else {
+      if (mem) {
+        llama_memory_clear(mem, true);
+      }
+      n_common = 0;
+      LOGI("🔄 [초기 KV 캐시] 전체 프롬프트 %d개 토큰 신규 디코딩", n_tokens);
+    }
+
+    // 5. 신규 토큰만 증분 배치 디코딩 (Prefill)
+    int n_tokens_to_decode = n_tokens - n_common;
+    if (n_tokens_to_decode > 0) {
+      struct llama_batch batch = llama_batch_init(n_tokens_to_decode, 0, 1);
+      for (int i = 0; i < n_tokens_to_decode; ++i) {
+        batch.token[i] = prompt_tokens[n_common + i];
+        batch.pos[i] = n_common + i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i] = (i == n_tokens_to_decode - 1);
+      }
+      batch.n_tokens = n_tokens_to_decode;
+
+      if (llama_decode(ctx_gen, batch) != 0) {
+        LOGE("신규 프롬프트 토큰 증분 llama_decode 사전 처리 실패");
+        llama_batch_free(batch);
+        return "Error: failed to decode incremental prompt into KV cache";
+      }
+      llama_batch_free(batch);
     }
 
     // 6. [과제 1] 자기회귀 토큰 생성 루프 & Stop Sequence 인터셉터
@@ -472,8 +508,8 @@ public:
       }
 
       // 생성된 단일 토큰 디코딩
-      batch = llama_batch_get_one(&new_token_id, 1);
-      if (llama_decode(ctx_gen, batch) != 0) {
+      struct llama_batch single_batch = llama_batch_get_one(&new_token_id, 1);
+      if (llama_decode(ctx_gen, single_batch) != 0) {
         LOGE("단일 토큰 llama_decode 실패 (token=%d)", new_token_id);
         break;
       }
@@ -498,6 +534,9 @@ public:
       }
       stream_lookahead_buffer.clear();
     }
+
+    // [과제 17 실전 구현] 다음 대화 턴의 증분 KV 캐시 재사용을 위해 현재 프롬프트 토큰 보존
+    prev_tokens = prompt_tokens;
 
     auto endTime = std::chrono::high_resolution_clock::now();
     int64_t elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(

@@ -78,7 +78,13 @@ class ScreenOperatorController(
     ): ExecutionResult {
         isInterrupted.set(false)
         val service = YggdrasilAccessibilityService.getInstance()
-            ?: return ExecutionResult(false, "AccessibilityService가 활성화되지 않았거나 권한이 부여되지 않았습니다.")
+        if (service == null) {
+            ScreenCaptureManager.notifyAccessibilityRequired(context)
+            return ExecutionResult(
+                false,
+                "화면 조작에 필요한 접근성 서비스가 중단되었습니다. 상단 알림창을 눌러 권한을 다시 켜주세요."
+            )
+        }
 
         // 1. Fail-Safe 인터럽트 상태 체크
         if (isInterrupted.get() || safetyGuardrail.isEmergencyStopped()) {

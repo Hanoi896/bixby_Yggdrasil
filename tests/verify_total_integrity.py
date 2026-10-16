@@ -42,8 +42,8 @@ required_files = [
     "playground.yggdrasil/resources/ko-KR/views/AutonomousDialogueResult.view.bxb",
     "playground.yggdrasil/resources/ko-KR/views/ExecutionResult.view.bxb",
     "playground.yggdrasil/resources/ko-KR/training/t-1.training.bxb",
-    # 에이전트 & 도구 스키마
-    "core/tools/tools_schema.json",
+    # 에이전트 & 도구 스키마 (Android assets 격리)
+    "core/android/app/src/main/assets/tools_schema.json",
     # 온디바이스 NPU C++ & JNI (app/src/main/cpp)
     "core/android/app/src/main/cpp/CMakeLists.txt",
     "core/android/app/src/main/cpp/llama_jni_bridge.cpp",
