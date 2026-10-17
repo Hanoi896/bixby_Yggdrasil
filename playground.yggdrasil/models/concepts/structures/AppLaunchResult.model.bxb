@@ -1,4 +1,4 @@
-﻿structure (AppLaunchResult) {
+structure (AppLaunchResult) {
   description (이그드라실 네이티브 앱 실행 결과)
 
   property (launchUri) {

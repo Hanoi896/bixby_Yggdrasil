@@ -20,6 +20,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import com.yggdrasil.assistant.integration.CalendarAndContactsManager
 import com.yggdrasil.assistant.integration.SleipnirMessengerClient
 import com.yggdrasil.assistant.permission.AppPermissionManager
@@ -28,7 +31,10 @@ import com.yggdrasil.assistant.persona.UserPersonaManager.SpeechTone
 import com.yggdrasil.assistant.proactive.ProactiveRoutineManager
 import com.yggdrasil.assistant.storage.AppStorageVaultManager
 import com.yggdrasil.assistant.storage.ModelAutoSyncManager
+import com.yggdrasil.assistant.voice.YggdrasilHotwordDetector
+import com.yggdrasil.assistant.voice.YggdrasilVoiceprintVerifier
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,6 +77,14 @@ fun SettingsScreen(
 
     // 프라이버시 상태
     var isLearningPaused by remember { mutableStateOf(false) }
+
+    // 고유 화자 인증 (음성 지문 캘리브레이션) 상태
+    val hotwordDetector = remember { YggdrasilHotwordDetector.getInstance(context) }
+    val voiceVerifier = remember { hotwordDetector.voiceprintVerifier }
+    var isVoiceCalibrated by remember { mutableStateOf(voiceVerifier.isCalibrated()) }
+    var currentCalibrationStep by remember { mutableIntStateOf(1) }
+    var isRecordingCalibration by remember { mutableStateOf(false) }
+    var calibrationFeedback by remember { mutableStateOf<String?>(null) }
 
     // 메신저(Sleipnir) 및 캘린더 매니저 상태
     val messengerClient = remember { SleipnirMessengerClient.getInstance(context) }
@@ -218,6 +232,134 @@ fun SettingsScreen(
                         }
                     }
                     Divider(color = Color(0xFF1A1A1A), modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
+
+            // [카드] 고유 화자 인증 (3문장 성문 등록)
+            MonoCard(title = "고유 화자 인증 (음성 지문 등록)") {
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isVoiceCalibrated) "● 본인 인증 활성화" else "○ 미등록 (표준 모드)",
+                            color = if (isVoiceCalibrated) Color(0xFFFFD700) else Color(0xFF888888),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        if (isVoiceCalibrated) {
+                            Text(
+                                "초기화",
+                                color = Color(0xFFFF6B6B),
+                                fontSize = 11.sp,
+                                modifier = Modifier
+                                    .clickable {
+                                        voiceVerifier.resetVoiceprint()
+                                        isVoiceCalibrated = false
+                                        currentCalibrationStep = 1
+                                        calibrationFeedback = "음성 프로필이 초기화되었습니다. 다시 등록해주세요."
+                                    }
+                                    .padding(4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "사용자 고유의 성대 음역대(F0 피치)와 13차원 음색(MFCC)을 학습하여, 다른 사람이 '이그드라실'을 불렀을 때 반응하지 않도록 완벽히 차단합니다.",
+                        color = Color(0xFF777777),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 3문장 단계 탭 표시
+                    val sentences = listOf("이그드라실", "오늘 날씨 어때", "화면 아래로 내려줘")
+                    sentences.forEachIndexed { index, sentence ->
+                        val step = index + 1
+                        val isCurrent = step == currentCalibrationStep && !isVoiceCalibrated
+                        val isDone = isVoiceCalibrated || step < currentCalibrationStep
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .background(
+                                    if (isCurrent) Color(0xFF1E1E1E) else Color.Transparent,
+                                    RoundedCornerShape(6.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isDone) "✓ " else "$step. ",
+                                color = if (isDone) Color(0xFFFFD700) else if (isCurrent) Color.White else Color(0xFF555555),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "\"$sentence\"",
+                                color = if (isDone) Color(0xFFAAAAAA) else if (isCurrent) Color.White else Color(0xFF555555),
+                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (!isVoiceCalibrated) {
+                        Button(
+                            onClick = {
+                                if (isRecordingCalibration) return@Button
+                                isRecordingCalibration = true
+                                calibrationFeedback = "🎙️ ${currentCalibrationStep}단계 발화 듣는 중... 말씀해주세요."
+
+                                coroutineScope.launch {
+                                    val sample = recordVoiceSample(context)
+                                    isRecordingCalibration = false
+                                    if (sample != null && sample.isNotEmpty()) {
+                                        val result = voiceVerifier.addCalibrationSample(sample, sample.size)
+                                        calibrationFeedback = result.message
+                                        if (result.isCompleted) {
+                                            isVoiceCalibrated = true
+                                            currentCalibrationStep = 1
+                                        } else {
+                                            currentCalibrationStep = 4 - result.remainingCount
+                                        }
+                                    } else {
+                                        calibrationFeedback = "⚠️ 마이크 녹음 실패. 권한을 확인해주세요."
+                                    }
+                                }
+                            },
+                            enabled = !isRecordingCalibration,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isRecordingCalibration) Color(0xFF333333) else Color.White,
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(42.dp)
+                        ) {
+                            Text(
+                                text = if (isRecordingCalibration) "🎙️ 음성 분석 중..." else "🎙️ ${currentCalibrationStep}단계 녹음하고 등록",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    calibrationFeedback?.let { msg ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = msg,
+                            color = if (msg.contains("완료") || msg.contains("성공")) Color(0xFFFFD700) else Color(0xFFCCCCCC),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
@@ -881,5 +1023,56 @@ fun MonoToggleItem(
                 uncheckedTrackColor = Color(0xFF222222)
             )
         )
+    }
+}
+
+/**
+ * 캘리브레이션용 1.8초 단기 고속 음성 녹음 헬퍼
+ */
+private suspend fun recordVoiceSample(context: Context): ShortArray? = withContext(Dispatchers.IO) {
+    val sampleRate = 16000
+    val channelConfig = AudioFormat.CHANNEL_IN_MONO
+    val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+    val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat).coerceAtLeast(sampleRate * 2)
+
+    var record: AudioRecord? = null
+    try {
+        record = AudioRecord(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            sampleRate,
+            channelConfig,
+            audioFormat,
+            minBuf
+        )
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            return@withContext null
+        }
+
+        val totalSamples = (sampleRate * 1.8).toInt() // 1.8초 (28,800 샘플)
+        val resultBuffer = ShortArray(totalSamples)
+        record.startRecording()
+
+        var totalRead = 0
+        val temp = ShortArray(1024)
+        while (totalRead < totalSamples) {
+            val toRead = Math.min(temp.size, totalSamples - totalRead)
+            val read = record.read(temp, 0, toRead)
+            if (read > 0) {
+                System.arraycopy(temp, 0, resultBuffer, totalRead, read)
+                totalRead += read
+            } else {
+                break
+            }
+        }
+        resultBuffer
+    } catch (e: Exception) {
+        null
+    } finally {
+        try {
+            record?.stop()
+            record?.release()
+        } catch (e: Exception) {
+            // 무시
+        }
     }
 }

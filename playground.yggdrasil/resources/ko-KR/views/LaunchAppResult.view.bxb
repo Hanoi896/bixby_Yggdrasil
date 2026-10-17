@@ -1,4 +1,4 @@
-﻿result-view {
+result-view {
   match: AppLaunchResult (this)
 
   message {

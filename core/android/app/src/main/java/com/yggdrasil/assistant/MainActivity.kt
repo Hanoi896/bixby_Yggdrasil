@@ -119,20 +119,13 @@ class MainActivity : ComponentActivity() {
                 },
                 onSendMessageToNpu = { userQuery ->
                     val query = userQuery.trim()
-                    // 1. 실제 캘린더 일정 조회 질의 처리 ("일정", "스케줄", "캘린더") - Dispatchers.IO에서 비동기 I/O
-                    if (query.contains("일정") || query.contains("스케줄") || query.contains("캘린더")) {
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            val calendarManager = CalendarAndContactsManager.getInstance(this@MainActivity)
-                            val events = calendarManager.getTodayEvents()
-                            if (events.isEmpty()) {
-                                "📅 오늘의 실제 구글/삼성 캘린더 일정입니다:\n\n• 등록된 일정이 없습니다. (또는 캘린더 읽기 권한을 확인해주세요)"
-                            } else {
-                                val formattedList = calendarManager.formatEventsForBriefing(events)
-                                val sb = StringBuilder("📅 오늘의 실제 구글/삼성 캘린더 일정 (${events.size}건):\n\n")
-                                formattedList.forEach { sb.append("• ").append(it).append("\n") }
-                                sb.toString().trimEnd()
-                            }
-                        }
+                    // 1. [과제 22 실전 구현] 팩트 컨텍스트 주입 & 2.4B sLLM 환각 방지 파이프라인
+                    val factBuilder = com.yggdrasil.assistant.rag.FactContextBuilder.getInstance(this@MainActivity)
+                    val factResult = factBuilder.buildEnrichedContext(query)
+
+                    // 100% 팩트 데이터 직결 반환이 가능한 경우 (일정, 세계수 성장, 판테온 상태 등)
+                    if (factResult.directAnswer != null) {
+                        factResult.directAnswer
                     }
                     // 2. 텔레그램 메신저 전송/테스트 질의 처리 - Dispatchers.IO에서 네트워크 소켓 I/O (NetworkOnMainThreadException 원천 차단)
                     else if (query.contains("텔레그램") && (query.contains("테스트") || query.contains("전송") || query.contains("보내"))) {
@@ -146,7 +139,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    // 3. 일반 대화 및 NPU 지능 추론 파이프라인 - Dispatchers.Default에서 고속 연산 (Zero-ANR)
+                    // 3. 온디바이스 NPU 추론 (팩트 주입 + 환각 방지 절대 가드레일 강제) - Dispatchers.Default (Zero-ANR)
                     else {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                             val model = modelSyncManager.getActiveModelFile()
@@ -157,7 +150,7 @@ class MainActivity : ComponentActivity() {
                                 if (!svc.isRunning()) {
                                     svc.startLocalDaemon(model.absolutePath)
                                 }
-                                svc.generate(userQuery)
+                                svc.generateWithPersona(factResult.systemPrompt, factResult.enrichedUserPrompt)
                             } else {
                                 "온디바이스 NPU 추론 엔진을 준비 중입니다. 잠시 후 다시 시도해 주세요."
                             }

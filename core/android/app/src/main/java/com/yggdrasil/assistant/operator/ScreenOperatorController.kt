@@ -27,6 +27,19 @@ class ScreenOperatorController(
 
     companion object {
         private const val TAG = "ScreenOperatorController"
+
+        @Volatile
+        private var instance: ScreenOperatorController? = null
+
+        fun getInstance(context: Context): ScreenOperatorController {
+            return instance ?: synchronized(this) {
+                instance ?: ScreenOperatorController(
+                    context = context.applicationContext,
+                    safetyGuardrail = SafetyGuardrailManager(context.applicationContext),
+                    captureManager = ScreenCaptureManager(context.applicationContext)
+                ).also { instance = it }
+            }
+        }
     }
 
     private val isInterrupted = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -411,4 +424,266 @@ class ScreenOperatorController(
             waitCount++
         }
     }
+
+    // ==========================================
+    // [과제 25]: 접근성 노드 기반 범용 화면 자율 조작 (Universal Operator) ReAct 5스텝 루프
+    // ==========================================
+
+    enum class ActionType {
+        CLICK,
+        TYPE,
+        SCROLL,
+        FINISH,
+        FAIL
+    }
+
+    data class OperatorDecision(
+        val actionType: ActionType,
+        val targetNode: YggdrasilAccessibilityService.InteractiveNode? = null,
+        val targetText: String? = null,
+        val inputText: String? = null,
+        val reason: String = ""
+    )
+
+    /**
+     * [과제 25]: 접근성 노드 기반 범용 화면 자율 조작(Universal Operator) ReAct 5스텝 루프
+     * 
+     * 빅스비처럼 제휴된 특정 기능만 깨작거리는 것이 아니라, 스마트폰에 설치된 모든 앱을
+     * 사람이 만지듯 자율적으로 조작하는 메커니즘.
+     * 
+     * 1. 관찰 (Observe): Accessibility 노드 트리 평탄화 수집 + FLAG_SECURE 보안 감지
+     * 2. 추론 (Reason): 사용자 목표(userGoal)와 현재 화면 요소를 대조하여 다음 동작(CLICK, TYPE, SCROLL, FINISH) 결정
+     * 3. 행동 (Act): Node.ACTION_CLICK (0ms 우선) -> dispatchGesture 탭 폴백 -> 텍스트 주입
+     * 4. 검증 및 대기 (Wait & Verify): UI 렌더링 변경 대기 및 전이 상태 검증
+     * 5. 반복/종료 (Loop / Complete): 목표 달성 시 성공 보고, 사용자 물리적 터치 시 0ms 즉각 중단(User Preemption)
+     */
+    fun executeAutonomousActionPlan(
+        userGoal: String,
+        initialScreenshot: android.graphics.Bitmap? = null,
+        maxSteps: Int = 8
+    ): ExecutionResult {
+        isInterrupted.set(false)
+        val service = YggdrasilAccessibilityService.getInstance()
+        if (service == null) {
+            ScreenCaptureManager.notifyAccessibilityRequired(context)
+            return ExecutionResult(false, "접근성 서비스가 비활성화되어 화면 자율 조작을 수행할 수 없습니다.")
+        }
+
+        safetyGuardrail.showSafetyGoldenBorder()
+        android.util.Log.i(TAG, "🤖 [Universal Operator] 자율 조작 루프 시작: '$userGoal' (최대 $maxSteps 스텝)")
+
+        try {
+            var step = 0
+            while (step < maxSteps) {
+                step++
+
+                // Fail-Safe: 사용자 물리적 터치 감지 시 즉각 중단 (0ms User Preemption)
+                if (isInterrupted.get() || safetyGuardrail.isEmergencyStopped()) {
+                    android.util.Log.w(TAG, "User Preemption: 사용자 물리 터치로 자율 조작 즉시 종료")
+                    return ExecutionResult(false, "사용자가 화면을 직접 터치하여 자율 조작을 즉시 중단했습니다.")
+                }
+
+                // Step 1: 관찰 (Observe)
+                val nodes = service.dumpInteractiveNodes()
+                if (nodes.isEmpty()) {
+                    // 화면 로딩 중일 가능성 있으므로 500ms 대기 후 재시도
+                    Thread.sleep(500)
+                    continue
+                }
+
+                // 보안 화면(비밀번호, PIN, 보안키패드) 감지 시 가드레일 가동
+                val hasSecurityField = nodes.any { node ->
+                    safetyGuardrail.isPasswordOrSensitiveField(node.node) ||
+                    node.text.contains("보안키패드") ||
+                    node.text.contains("비밀번호") ||
+                    node.text.contains("인증서")
+                }
+                if (hasSecurityField) {
+                    android.util.Log.w(TAG, "보안/비밀번호 화면 감지 -> 음성 핸드오프")
+                    return ExecutionResult(
+                        success = false,
+                        message = "보안 및 금융 보호가 필요한 화면입니다. 해당 단계는 직접 입력해주세요.",
+                        details = mapOf("handOffToVoice" to true, "step" to step)
+                    )
+                }
+
+                // Step 2: 추론 (Reason)
+                val decision = planNextAction(userGoal, nodes, step)
+                android.util.Log.i(TAG, "스텝 $step 추론 결과: ${decision.actionType} -> ${decision.targetText ?: decision.inputText ?: ""}")
+
+                if (decision.actionType == ActionType.FINISH) {
+                    return ExecutionResult(true, "목표 '$userGoal' 달성 완료 ($step 단계 실행)")
+                }
+
+                if (decision.actionType == ActionType.FAIL) {
+                    return ExecutionResult(false, "더 이상 진행할 수 없습니다: ${decision.reason}")
+                }
+
+                // Step 3: 행동 (Act)
+                val stepSuccess = when (decision.actionType) {
+                    ActionType.CLICK -> {
+                        val targetNode = decision.targetNode
+                        if (targetNode != null) {
+                            val directClicked = service.performClickOnNode(targetNode.node)
+                            if (!directClicked) {
+                                val bounds = targetNode.bounds
+                                val latch = java.util.concurrent.CountDownLatch(1)
+                                var tapOk = false
+                                registerLatch(latch)
+                                try {
+                                    service.tap(bounds.centerX().toFloat(), bounds.centerY().toFloat()) { ok ->
+                                        tapOk = ok
+                                        latch.countDown()
+                                    }
+                                    latch.await(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                } finally {
+                                    unregisterLatch(latch)
+                                }
+                                tapOk
+                            } else true
+                        } else false
+                    }
+                    ActionType.TYPE -> {
+                        val targetNode = decision.targetNode
+                        val text = decision.inputText ?: ""
+                        if (targetNode != null) {
+                            service.injectText(targetNode.node, text)
+                        } else false
+                    }
+                    ActionType.SCROLL -> {
+                        val (w, h) = getRealDisplayBounds()
+                        val swipeLatch = java.util.concurrent.CountDownLatch(1)
+                        var swipeOk = false
+                        registerLatch(swipeLatch)
+                        try {
+                            service.swipe(w * 0.5f, h * 0.75f, w * 0.5f, h * 0.25f, 350) { ok ->
+                                swipeOk = ok
+                                swipeLatch.countDown()
+                            }
+                            swipeLatch.await(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        } finally {
+                            unregisterLatch(swipeLatch)
+                        }
+                        swipeOk
+                    }
+                    else -> false
+                }
+
+                if (!stepSuccess) {
+                    android.util.Log.w(TAG, "스텝 $step 액션 실행 실패 -> 다음 시도")
+                }
+
+                // Step 4: 검증 및 UI 정착 대기 (Wait & Verify)
+                val settled = waitForUiSettled(service, 600)
+                if (!settled || isInterrupted.get() || safetyGuardrail.isEmergencyStopped()) {
+                    return ExecutionResult(false, "사용자 조작으로 인해 중단되었습니다.")
+                }
+            }
+
+            return ExecutionResult(false, "최대 허용 스텝($maxSteps)을 초과하여 작업을 안전 종료했습니다.")
+        } finally {
+            safetyGuardrail.hideSafetyGoldenBorder()
+        }
+    }
+
+    /**
+     * 화면 내 노드 목록과 사용자 목표를 대조하여 다음 최적 액션을 도출하는 지능형 플래너
+     */
+    private fun planNextAction(
+        userGoal: String,
+        nodes: List<YggdrasilAccessibilityService.InteractiveNode>,
+        step: Int
+    ): OperatorDecision {
+        val lowerGoal = userGoal.lowercase()
+
+        // 1. 완료 상태 검사 (성공 팝업/텍스트 확인)
+        val completionKeywords = listOf("완료되었습니다", "전송 완료", "주문 접수", "성공적으로", "예약 완료", "결제 완료")
+        val isFinished = nodes.any { node ->
+            completionKeywords.any { kw -> node.text.contains(kw) }
+        }
+        if (isFinished) {
+            return OperatorDecision(ActionType.FINISH, reason = "완료 화면 도달")
+        }
+
+        // 2. 검색/입력 목표인 경우
+        if (lowerGoal.contains("검색") || lowerGoal.contains("찾아") || lowerGoal.contains("입력")) {
+            val queryText = extractSearchQuery(userGoal)
+            val editNode = nodes.firstOrNull { it.isEditable }
+            if (editNode != null && queryText.isNotBlank()) {
+                if (editNode.text.isEmpty() || editNode.text != queryText) {
+                    return OperatorDecision(
+                        actionType = ActionType.TYPE,
+                        targetNode = editNode,
+                        inputText = queryText,
+                        reason = "검색어 '$queryText' 주입"
+                    )
+                }
+            }
+
+            // 검색 버튼 또는 돋보기 클릭
+            val searchBtn = nodes.firstOrNull { node ->
+                node.isClickable && (node.text.contains("검색") || node.contentDesc.contains("검색") || node.contentDesc.contains("조회"))
+            }
+            if (searchBtn != null) {
+                return OperatorDecision(
+                    actionType = ActionType.CLICK,
+                    targetNode = searchBtn,
+                    targetText = searchBtn.text.ifEmpty { searchBtn.contentDesc },
+                    reason = "검색 버튼 클릭"
+                )
+            }
+        }
+
+        // 3. 확인 / 다음 / 동의 / 보내기 / 주문 등 핵심 진행 버튼 우선 탐색
+        val actionKeywords = listOf("동의하고 계속", "전체 동의", "다음", "확인", "보내기", "이체", "송금", "구매하기", "주문하기", "장바구니 담기")
+        for (kw in actionKeywords) {
+            val matchingNode = nodes.firstOrNull { node ->
+                node.isClickable && (node.text.contains(kw) || node.contentDesc.contains(kw))
+            }
+            if (matchingNode != null) {
+                return OperatorDecision(
+                    actionType = ActionType.CLICK,
+                    targetNode = matchingNode,
+                    targetText = matchingNode.text.ifEmpty { matchingNode.contentDesc },
+                    reason = "핵심 진행 버튼 '$kw' 클릭"
+                )
+            }
+        }
+
+        // 4. 사용자 목표 단어와의 직접 매칭 탐색
+        val words = userGoal.split(" ").filter { it.length >= 2 }
+        for (word in words) {
+            val matched = nodes.firstOrNull { node ->
+                node.isClickable && (node.text.contains(word) || node.contentDesc.contains(word))
+            }
+            if (matched != null) {
+                return OperatorDecision(
+                    actionType = ActionType.CLICK,
+                    targetNode = matched,
+                    targetText = matched.text.ifEmpty { matched.contentDesc },
+                    reason = "목표 단어 '$word' 일치 항목 클릭"
+                )
+            }
+        }
+
+        // 5. 현재 뷰포트에 타깃이 없는 경우 아래로 스크롤
+        if (step <= 3) {
+            return OperatorDecision(
+                actionType = ActionType.SCROLL,
+                reason = "화면 하단 숨겨진 요소 탐색을 위한 스크롤"
+            )
+        }
+
+        return OperatorDecision(ActionType.FAIL, reason = "목표와 일치하는 UI 요소를 찾을 수 없습니다.")
+    }
+
+    private fun extractSearchQuery(userGoal: String): String {
+        return userGoal
+            .replace("검색해줘", "")
+            .replace("검색해", "")
+            .replace("찾아줘", "")
+            .replace("입력해줘", "")
+            .trim()
+    }
 }
+

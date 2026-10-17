@@ -162,6 +162,75 @@ class YggdrasilAccessibilityService : AccessibilityService() {
         return nodeMap
     }
 
+    /**
+     * 특정 노드 또는 상위 clickable 부모 노드에 직접 ACTION_CLICK 이벤트 주입 (0ms 고속 실행)
+     */
+    fun performClickOnNode(node: AccessibilityNodeInfo): Boolean {
+        var current: AccessibilityNodeInfo? = node
+        while (current != null) {
+            if (current.isClickable) {
+                return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
+            current = current.parent
+        }
+        // clickable 플래그가 없더라도 대상 노드에 강제 ACTION_CLICK 시도
+        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    /**
+     * ReAct 자율 에이전트용 대화형 UI 노드 평탄화 덤프 (토큰 절약 및 고속 파싱)
+     */
+    data class InteractiveNode(
+        val index: Int,
+        val text: String,
+        val contentDesc: String,
+        val className: String,
+        val isClickable: Boolean,
+        val isEditable: Boolean,
+        val bounds: Rect,
+        val node: AccessibilityNodeInfo
+    )
+
+    fun dumpInteractiveNodes(): List<InteractiveNode> {
+        val root = rootInActiveWindow ?: return emptyList()
+        val list = mutableListOf<InteractiveNode>()
+        collectInteractiveNodesRecursive(root, list)
+        return list
+    }
+
+    private fun collectInteractiveNodesRecursive(
+        node: AccessibilityNodeInfo,
+        outList: MutableList<InteractiveNode>
+    ) {
+        val text = node.text?.toString()?.trim() ?: ""
+        val desc = node.contentDescription?.toString()?.trim() ?: ""
+        val hasText = text.isNotBlank() || desc.isNotBlank()
+
+        if (node.isClickable || node.isEditable || hasText) {
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            if (bounds.width() > 0 && bounds.height() > 0) {
+                outList.add(
+                    InteractiveNode(
+                        index = outList.size,
+                        text = text,
+                        contentDesc = desc,
+                        className = node.className?.toString() ?: "",
+                        isClickable = node.isClickable,
+                        isEditable = node.isEditable,
+                        bounds = bounds,
+                        node = node
+                    )
+                )
+            }
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectInteractiveNodesRecursive(child, outList)
+        }
+    }
+
     // ==========================================
     // 2. dispatchGesture 기반 터치/제스처 제어 API
     // ==========================================
