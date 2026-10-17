@@ -76,6 +76,16 @@ class AutoOperatorManager private constructor(private val context: Context) {
      * 예: "유튜브 켜줘", "스크롤 내려줘", "인스타그램 켜줘", "뒤로가", "홈으로"
      */
     suspend fun executeNaturalCommand(command: String): ExecutionReport = withContext(Dispatchers.Default) {
+        val report = executeNaturalCommandInternal(command)
+        if (report.success) {
+            try {
+                com.yggdrasil.assistant.growth.WorldTreeGrowthManager.getInstance(context).recordAction()
+            } catch (_: Exception) {}
+        }
+        report
+    }
+
+    private suspend fun executeNaturalCommandInternal(command: String): ExecutionReport = withContext(Dispatchers.Default) {
         val cmd = command.trim()
         val lower = cmd.lowercase()
         Log.i(TAG, "🤖 [자율 조작 명령 수신]: '$cmd'")
@@ -165,7 +175,10 @@ class AutoOperatorManager private constructor(private val context: Context) {
         // 6. 의미론적(Semantic) UI 노드 클릭 ("'검색' 눌러줘", "'재생' 클릭해줘", "'확인' 눌러")
         val clickTarget = extractClickTarget(cmd)
         if (clickTarget.isNotBlank()) {
-            val targetNode = findBestMatchingNode(service, clickTarget)
+            if (service.isUserInterrupted.get()) {
+                return@withContext ExecutionReport(false, "사용자 터치로 인해 조작이 중단되었습니다.")
+            }
+            val targetNode = waitForNode(service, clickTarget, timeoutMs = 1500L)
             if (targetNode != null) {
                 val rect = android.graphics.Rect()
                 targetNode.getBoundsInScreen(rect)
@@ -174,7 +187,11 @@ class AutoOperatorManager private constructor(private val context: Context) {
 
                 // 오토마우스 시각화 포인터 표시
                 showVirtualPointerAt(cx, cy)
-                delay(200)
+                delay(150)
+
+                if (service.isUserInterrupted.get()) {
+                    return@withContext ExecutionReport(false, "사용자 터치로 인해 클릭이 중단되었습니다.")
+                }
 
                 // 1순위: 노드 직접 클릭 액션 수행
                 val directOk = service.performClickOnNode(targetNode)
@@ -185,7 +202,38 @@ class AutoOperatorManager private constructor(private val context: Context) {
                 Log.i(TAG, "🎯 [시맨틱 클릭 성공]: '$clickTarget' 노드 좌표($cx, $cy)")
                 return@withContext ExecutionReport(true, "'$clickTarget' 요소를 클릭했습니다.")
             } else {
-                Log.w(TAG, "⚠️ [노드 미발견]: 화면에 '$clickTarget' 텍스트/버튼이 없습니다.")
+                // 비표준 캔버스/웹뷰 앱 대응 (배달의민족, 토스 등): 1-Shot 캡처 후 Google ML Kit Text Recognition 비전 OCR
+                Log.w(TAG, "⚠️ [노드 미발견]: 캔버스/웹뷰 앱 대비 Google ML Kit 비전 OCR 좌표 역산 파이프라인 가동")
+                val captureManager = ScreenCaptureManager.getInstance(context)
+                var ocrTargetPoint: android.graphics.Point? = null
+                var isSecureBlackout = false
+                val latch = java.util.concurrent.CountDownLatch(1)
+
+                captureManager.findElementWithSecurity(clickTarget) { matched, blackout ->
+                    isSecureBlackout = blackout
+                    ocrTargetPoint = matched?.centerPoint
+                    latch.countDown()
+                }
+                latch.await(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
+
+                if (service.isUserInterrupted.get()) {
+                    return@withContext ExecutionReport(false, "사용자 터치로 인해 OCR 인식이 중단되었습니다.")
+                }
+
+                if (isSecureBlackout) {
+                    return@withContext ExecutionReport(false, "보안 화면(FLAG_SECURE) 감지로 인해 자동 조작이 차단되었습니다. 직접 터치해주세요.")
+                }
+
+                if (ocrTargetPoint != null) {
+                    val pt = ocrTargetPoint!!
+                    showVirtualPointerAt(pt.x.toFloat(), pt.y.toFloat())
+                    delay(150)
+                    service.tap(pt.x.toFloat(), pt.y.toFloat())
+                    Log.i(TAG, "🎯 [비전 OCR 좌표 역산 탭 성공]: '$clickTarget' (${pt.x}, ${pt.y})")
+                    return@withContext ExecutionReport(true, "화면 비전 인식으로 '$clickTarget' 요소를 찾아 탭했습니다.")
+                } else {
+                    Log.w(TAG, "⚠️ [비전 OCR 미발견]: 화면에 '$clickTarget' 텍스트를 찾을 수 없습니다.")
+                }
             }
         }
 
@@ -269,41 +317,54 @@ class AutoOperatorManager private constructor(private val context: Context) {
         serviceParam: YggdrasilAccessibilityService? = null
     ): ExecutionReport = withContext(Dispatchers.Default) {
         val service = serviceParam ?: YggdrasilAccessibilityService.getInstance()
-            ?: return@withContext ExecutionReport(false, "접근성 서비스가 비활성화되어 있습니다.")
+        if (service.isUserInterrupted.get()) {
+            return@withContext ExecutionReport(false, "사용자 터치로 인해 메시지 발송이 중단되었습니다.")
+        }
 
         // 1단계: 앱 실행
         launchAppByName(appName)
-        delay(1500)
+        waitForCondition(service, timeoutMs = 2000L) { service.rootInActiveWindow != null }
+
+        if (service.isUserInterrupted.get()) {
+            return@withContext ExecutionReport(false, "사용자 터치로 인해 조작이 중단되었습니다.")
+        }
 
         // 2단계: 대상 방/사람 탐색 및 진입
         if (targetPerson.isNotBlank()) {
-            var personNode = findBestMatchingNode(service, targetPerson)
+            var personNode = waitForNode(service, targetPerson, timeoutMs = 1500L)
             if (personNode == null) {
                 // 화면에 즉시 보이지 않을 경우 앱 내 '검색' 버튼 클릭하여 직접 검색 진입
-                val searchBtn = findBestMatchingNode(service, "검색")
+                val searchBtn = waitForNode(service, "검색", timeoutMs = 1000L)
                 if (searchBtn != null) {
                     service.performClickOnNode(searchBtn)
-                    delay(700)
+                    waitForCondition(service, timeoutMs = 1500L) { findFirstEditableNode(service.rootInActiveWindow) != null }
                     val searchEdit = findFirstEditableNode(service.rootInActiveWindow)
                     if (searchEdit != null) {
                         val sArgs = Bundle().apply {
                             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, targetPerson)
                         }
                         searchEdit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, sArgs)
-                        delay(800)
-                        personNode = findBestMatchingNode(service, targetPerson)
+                        personNode = waitForNode(service, targetPerson, timeoutMs = 2000L)
                     }
                 }
+            }
+
+            if (service.isUserInterrupted.get()) {
+                return@withContext ExecutionReport(false, "사용자 터치로 인해 방 진입이 중단되었습니다.")
             }
 
             if (personNode != null) {
                 val rect = android.graphics.Rect()
                 personNode.getBoundsInScreen(rect)
                 showVirtualPointerAt(rect.centerX().toFloat(), rect.centerY().toFloat())
-                delay(200)
+                delay(150)
                 service.performClickOnNode(personNode)
-                delay(1000)
+                waitForCondition(service, timeoutMs = 2000L) { findFirstEditableNode(service.rootInActiveWindow) != null }
             }
+        }
+
+        if (service.isUserInterrupted.get()) {
+            return@withContext ExecutionReport(false, "사용자 터치로 인해 텍스트 입력이 중단되었습니다.")
         }
 
         // 3단계: 채팅 입력창(EditText) 탐색 및 텍스트 주입
@@ -313,7 +374,7 @@ class AutoOperatorManager private constructor(private val context: Context) {
             val rect = android.graphics.Rect()
             editNode.getBoundsInScreen(rect)
             showVirtualPointerAt(rect.centerX().toFloat(), rect.centerY().toFloat())
-            delay(150)
+            delay(100)
 
             val args = Bundle().apply {
                 putCharSequence(
@@ -322,7 +383,9 @@ class AutoOperatorManager private constructor(private val context: Context) {
                 )
             }
             editNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            delay(400)
+            waitForCondition(service, timeoutMs = 1000L) {
+                findBestMatchingNode(service, "전송") != null || findBestMatchingNode(service, "보내기") != null
+            }
 
             // 4단계: 전송 버튼 탐색 및 클릭 (다중 별칭 매칭 + 키보드 엔터 폴백)
             val sendNode = findBestMatchingNode(service, "전송")
@@ -452,6 +515,44 @@ class AutoOperatorManager private constructor(private val context: Context) {
             if (found != null) return found
         }
         return null
+    }
+
+    /**
+     * 화면 전환 동적 대기 (Explicit Wait / Sync Barrier)
+     * 고정 delay()를 제거하고 목표 노드가 화면에 렌더링되거나 로딩이 완료될 때까지 지능형 폴링
+     */
+    private suspend fun waitForNode(
+        service: YggdrasilAccessibilityService,
+        keyword: String,
+        timeoutMs: Long = 2500L,
+        pollIntervalMs: Long = 50L
+    ): AccessibilityNodeInfo? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (service.isUserInterrupted.get()) {
+                Log.w(TAG, "사용자 물리 터치 감지 -> 동적 대기(Sync Barrier) 즉시 인터럽트 취소")
+                return null
+            }
+            val node = findBestMatchingNode(service, keyword)
+            if (node != null) return node
+            delay(pollIntervalMs)
+        }
+        return null
+    }
+
+    private suspend fun waitForCondition(
+        service: YggdrasilAccessibilityService,
+        timeoutMs: Long = 2000L,
+        pollIntervalMs: Long = 50L,
+        condition: () -> Boolean
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (service.isUserInterrupted.get()) return false
+            if (condition()) return true
+            delay(pollIntervalMs)
+        }
+        return false
     }
 
     /**

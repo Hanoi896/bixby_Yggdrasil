@@ -26,18 +26,21 @@ class MuninRagManager(context: Context) {
     private val embeddingEngine = MuninEmbeddingEngine()
     private val database = MuninSqlCipherDatabase(context.applicationContext, embeddingEngine)
 
+    private val prefs = context.applicationContext.getSharedPreferences("yggdrasil_munin_prefs", Context.MODE_PRIVATE)
+
     // 자체 개선(Self-Improvement)을 위한 사용자 선호도 및 성공 지표 캐시
     private var autonomousFeedbackScore: Float = 1.0f
 
-    // 사용자 개인정보 보호를 위한 학습/기억 저장 일시 정지 스위치 (학습 끄기 버튼)
+    // 사용자 개인정보 보호를 위한 학습/기억 저장 일시 정지 스위치 (SharedPreferences 영구 저장)
     @Volatile
-    private var isLearningPaused: Boolean = false
+    private var isLearningPaused: Boolean = prefs.getBoolean("learning_paused", false)
 
     /**
      * 학습 및 대화 자동 저장 일시 정지/재개 토글 스위치 (학습 잠시 끄는 버튼)
      */
     fun setLearningPaused(paused: Boolean) {
         this.isLearningPaused = paused
+        prefs.edit().putBoolean("learning_paused", paused).apply()
     }
 
     fun isLearningPaused(): Boolean = isLearningPaused
@@ -52,12 +55,16 @@ class MuninRagManager(context: Context) {
             return "archiving_paused"
         }
         val dialogueText = "[사용자] $userUtterance\n[Yggdrasil] $assistantReply"
-        return database.insertMemory(
+        val memoryId = database.insertMemory(
             content = dialogueText,
             category = "DialogueHistory",
             importance = importance,
             isDialogue = true
         )
+        try {
+            com.yggdrasil.assistant.growth.WorldTreeGrowthManager.getInstance(context).recordDialogue()
+        } catch (_: Exception) {}
+        return memoryId
     }
 
     /**
@@ -67,12 +74,16 @@ class MuninRagManager(context: Context) {
         if (isLearningPaused) {
             return "recording_paused"
         }
-        return database.insertMemory(
+        val memoryId = database.insertMemory(
             content = content,
             category = category,
             importance = importance,
             isDialogue = false
         )
+        try {
+            com.yggdrasil.assistant.growth.WorldTreeGrowthManager.getInstance(context).recordMemory()
+        } catch (_: Exception) {}
+        return memoryId
     }
 
     /**

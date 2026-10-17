@@ -341,4 +341,127 @@ class ModelAutoSyncManager private constructor(private val context: Context) {
             isUsingFallbackBackup = !active.exists() && backup.exists()
         )
     }
+
+    /**
+     * 1.8GB 모델 다운로드 중단 복구(Resume) 및 HTTP Range 기반 무중단 수신
+     * @param urlStr 다운로드 URL
+     * @param targetFile 다운로드 대상 경로
+     * @param expectedSha256 (선택) 무결성 검증용 SHA-256 해시
+     * @param onProgress (진행 퍼센트, 다운로드된 바이트, 전체 바이트) 콜백
+     */
+    suspend fun downloadModelWithResume(
+        urlStr: String,
+        targetFile: File,
+        expectedSha256: String? = null,
+        onProgress: ((Int, Long, Long) -> Unit)? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        val partFile = File(targetFile.parentFile, "${targetFile.name}.part")
+        var existingBytes = if (partFile.exists()) partFile.length() else 0L
+
+        try {
+            val url = java.net.URL(urlStr)
+            var connection = url.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "HEAD"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            val totalLength = connection.contentLengthLong
+            connection.disconnect()
+
+            if (existingBytes > 0 && totalLength > 0 && existingBytes == totalLength) {
+                // 이미 완전 수신됨 -> 검증 진행
+                Log.i(TAG, "임시 파일이 이미 완전 수신되었습니다. SHA-256 검증 진행.")
+            } else {
+                connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 30000
+
+                if (existingBytes > 0) {
+                    connection.setRequestProperty("Range", "bytes=$existingBytes-")
+                    Log.i(TAG, "📥 [이어받기 가동]: Range bytes=$existingBytes-")
+                }
+
+                val responseCode = connection.responseCode
+                val isAppend = (responseCode == java.net.HttpURLConnection.HTTP_PARTIAL)
+                if (!isAppend && responseCode != java.net.HttpURLConnection.HTTP_OK) {
+                    Log.e(TAG, "다운로드 실패: HTTP $responseCode")
+                    connection.disconnect()
+                    return@withContext false
+                }
+
+                if (!isAppend) {
+                    existingBytes = 0L
+                }
+
+                val fullSize = if (isAppend) existingBytes + connection.contentLengthLong else connection.contentLengthLong
+
+                connection.inputStream.use { input ->
+                    FileOutputStream(partFile, isAppend).use { output ->
+                        val buffer = ByteArray(4 * 1024 * 1024) // 4MB 고속 스트림 버퍼
+                        var read: Int
+                        var downloaded = existingBytes
+                        var lastPercent = 0
+
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            if (fullSize > 0) {
+                                val percent = ((downloaded * 100) / fullSize).toInt()
+                                if (percent != lastPercent) {
+                                    lastPercent = percent
+                                    onProgress?.invoke(percent, downloaded, fullSize)
+                                }
+                            }
+                        }
+                        output.flush()
+                    }
+                }
+                connection.disconnect()
+            }
+
+            // GGUF 헤더 및 크기 자가 진단
+            if (!validateModelFile(partFile)) {
+                Log.e(TAG, "다운로드된 모델 헤더 검증 실패. 파기합니다.")
+                partFile.delete()
+                return@withContext false
+            }
+
+            // SHA-256 해시 검증
+            if (!expectedSha256.isNullOrBlank()) {
+                val actualSha256 = calculateSha256(partFile)
+                if (!actualSha256.equals(expectedSha256.trim(), ignoreCase = true)) {
+                    Log.e(TAG, "🚨 SHA-256 해시 불일치! (기대: $expectedSha256, 실제: $actualSha256) 파일 변조/손상 감지 -> 즉시 파기")
+                    partFile.delete()
+                    return@withContext false
+                }
+                Log.i(TAG, "🔒 SHA-256 무결성 검증 성공: $actualSha256")
+            }
+
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+            val renamed = partFile.renameTo(targetFile)
+            Log.i(TAG, "🎉 1.8GB 모델 다운로드 및 무결성 승격 완료 (성공: $renamed)")
+            return@withContext renamed
+        } catch (e: Exception) {
+            Log.e(TAG, "모델 다운로드 중단/오류: ${e.message}", e)
+            return@withContext false
+        }
+    }
+
+    /**
+     * 파일의 SHA-256 체크섬 고속 스트리밍 연산 (메모리 OOM 방어)
+     */
+    fun calculateSha256(file: File): String {
+        if (!file.exists()) return ""
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { fis ->
+            val buffer = ByteArray(8 * 1024 * 1024) // 8MB 버퍼
+            var read: Int
+            while (fis.read(buffer).also { read = it } != -1) {
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
 }

@@ -75,8 +75,9 @@ fun SettingsScreen(
     var enableBatteryCare by remember { mutableStateOf(proactiveConfig.enableLowBatteryCare) }
     var enableCommute by remember { mutableStateOf(proactiveConfig.enableCommuteRoutine) }
 
-    // 프라이버시 상태
-    var isLearningPaused by remember { mutableStateOf(false) }
+    // 프라이버시 상태 (Munin 영구 SharedPreferences 연동)
+    val muninManager = remember { com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context) }
+    var isLearningPaused by remember { mutableStateOf(muninManager.isLearningPaused()) }
 
     // 고유 화자 인증 (음성 지문 캘리브레이션) 상태
     val hotwordDetector = remember { YggdrasilHotwordDetector.getInstance(context) }
@@ -738,7 +739,10 @@ fun SettingsScreen(
                     }
                     Switch(
                         checked = isLearningPaused,
-                        onCheckedChange = { isLearningPaused = it },
+                        onCheckedChange = {
+                            isLearningPaused = it
+                            muninManager.setLearningPaused(it)
+                        },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.Black,
                             checkedTrackColor = Color.White,

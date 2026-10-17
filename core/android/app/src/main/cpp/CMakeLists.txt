@@ -15,12 +15,25 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static llama libraries" FORCE)
 # 1. Vulkan GPU 가속 백엔드 (NDK 호스트 glslc 의존성 회피를 위해 기본 OFF)
 set(GGML_VULKAN OFF CACHE BOOL "Disable Vulkan backend for Android NDK" FORCE)
 
-# 2. Qualcomm Hexagon HTP / QNN NPU 백엔드 (HEXAGON_SDK_ROOT 환경변수 존재 시 활성화, 부재 시 ARM NEON CPU 백엔드로 안전 폴백)
-if (DEFINED ENV{HEXAGON_SDK_ROOT} AND IS_DIRECTORY "$ENV{HEXAGON_SDK_ROOT}")
+# 2. Qualcomm Hexagon HTP / QNN NPU 백엔드
+# QNN_SDK_ROOT 또는 HEXAGON_SDK_ROOT 환경변수 존재 시 libQnnHtp.so, libQnnSystem.so 물리적 바인딩
+if (DEFINED ENV{QNN_SDK_ROOT} AND IS_DIRECTORY "$ENV{QNN_SDK_ROOT}")
+    set(QNN_ROOT $ENV{QNN_SDK_ROOT})
+    set(GGML_QNN ON CACHE BOOL "Enable Qualcomm QNN HTP NPU backend for Snapdragon 8 Elite" FORCE)
+    include_directories(${QNN_ROOT}/include/QNN)
+    link_directories(${QNN_ROOT}/lib/aarch64-android)
+    set(QNN_LIBS QnnHtp QnnSystem)
+    add_compile_definitions(GGML_USE_QNN=1)
+elseif (DEFINED ENV{HEXAGON_SDK_ROOT} AND IS_DIRECTORY "$ENV{HEXAGON_SDK_ROOT}")
     set(GGML_HEXAGON ON CACHE BOOL "Enable Qualcomm Hexagon HTP NPU backend for Snapdragon 8 Elite" FORCE)
     set(GGML_HEXAGON_ARCH "v75;v79;v81" CACHE STRING "Target Hexagon NPU architectures" FORCE)
+    include_directories($ENV{HEXAGON_SDK_ROOT}/include)
+    set(QNN_LIBS "")
+    add_compile_definitions(GGML_USE_HEXAGON=1)
 else()
+    set(GGML_QNN OFF CACHE BOOL "Disable QNN backend when QNN SDK is not installed" FORCE)
     set(GGML_HEXAGON OFF CACHE BOOL "Disable Hexagon backend when Hexagon SDK is not installed" FORCE)
+    set(QNN_LIBS "")
 endif()
 
 # Snapdragon 8 Elite 및 ARMv8.4-A 최적화
@@ -60,6 +73,7 @@ target_link_libraries(yggdrasil_llm
     PRIVATE
     llama
     ggml
+    ${QNN_LIBS}
     android
     log
 )

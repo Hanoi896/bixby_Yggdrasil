@@ -50,6 +50,7 @@ enum class SenderType {
 fun ChatScreen(
     personaManager: UserPersonaManager,
     onSendMessageToNpu: suspend (String) -> String,
+    onSendMessageToNpuStream: (suspend (String, (String) -> Unit) -> String)? = null,
     pendingQuery: String? = null,
     onQueryConsumed: () -> Unit = {}
 ) {
@@ -69,6 +70,15 @@ fun ChatScreen(
                 text = "${profile.userCallName}, 무엇을 도와드릴까요? 일정을 확인하거나 파일 압축, 화면 제어 등 편하게 말씀해 주세요."
             )
         )
+    }
+
+    // 화면 이탈(탭 전환 등) 시 재생 중이던 음성 TTS 즉시 중단
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                com.yggdrasil.assistant.voice.YggdrasilTtsManager.getInstance(context).stop()
+            } catch (_: Exception) {}
+        }
     }
 
     // 앱 구동 시 Munin SQLCipher 암호화 DB에서 직전 대화 기록 30건 자동 복원 (기억 영속화)
@@ -116,14 +126,39 @@ fun ChatScreen(
 
         coroutineScope.launch {
             listState.animateScrollToItem(messages.size - 1)
-            val response = onSendMessageToNpu(trimmed)
-            messages.add(ChatMessage(sender = SenderType.ASSISTANT, text = response))
+
+            val finalReply = if (onSendMessageToNpuStream != null) {
+                // 실시간 스트리밍 타자기 효과: 어시스턴트 버블을 먼저 생성한 후 토큰이 도착할 때마다 텍스트 실시간 갱신
+                val assistantMsg = ChatMessage(sender = SenderType.ASSISTANT, text = "")
+                messages.add(assistantMsg)
+                val targetIndex = messages.size - 1
+                val accumulated = StringBuilder()
+
+                val result = onSendMessageToNpuStream(trimmed) { token ->
+                    coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                        accumulated.append(token)
+                        if (targetIndex in messages.indices) {
+                            messages[targetIndex] = messages[targetIndex].copy(text = accumulated.toString())
+                        }
+                    }
+                }
+
+                if (targetIndex in messages.indices) {
+                    messages[targetIndex] = messages[targetIndex].copy(text = result.ifBlank { accumulated.toString() })
+                }
+                result.ifBlank { accumulated.toString() }
+            } else {
+                val response = onSendMessageToNpu(trimmed)
+                messages.add(ChatMessage(sender = SenderType.ASSISTANT, text = response))
+                response
+            }
+
             isThinking = false
             listState.animateScrollToItem(messages.size - 1)
 
             // Munin AES-256 SQLCipher 암호화 DB에 실시간 대화 아카이빙 (RAG 영구 기억 연동)
             launch(kotlinx.coroutines.Dispatchers.IO) {
-                com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context).archiveDialogue(trimmed, response)
+                com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context).archiveDialogue(trimmed, finalReply)
             }
         }
     }

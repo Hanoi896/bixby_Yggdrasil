@@ -38,6 +38,14 @@ class YggdrasilAccessibilityService : AccessibilityService() {
 
     private val transientMessageCache = java.util.concurrent.ConcurrentLinkedDeque<TransientMessage>()
 
+    // 🛡️ 사용자 우선권(User Preemption): 화면 터치 감지 플래그 및 긴급 중단 리스너
+    val isUserInterrupted = java.util.concurrent.atomic.AtomicBoolean(false)
+    var onUserPreemptionListener: (() -> Unit)? = null
+
+    fun resetPreemptionFlag() {
+        isUserInterrupted.set(false)
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -46,7 +54,15 @@ class YggdrasilAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val eventType = event.eventType
-        // 1회성 토스트, 스낵바 및 알림 상태 변경 이벤트 캡처
+
+        // 1. 사용자 물리적 화면 터치(User Preemption) 0.01초 실시간 감지 -> AI 자동 조작 즉시 취소
+        if (eventType == AccessibilityEvent.TYPE_TOUCH_INTERACTION_START ||
+            eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            isUserInterrupted.set(true)
+            onUserPreemptionListener?.invoke()
+        }
+
+        // 2. 1회성 토스트, 스낵바 및 알림 상태 변경 이벤트 캡처
         if (eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED ||
             eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val textList = event.text

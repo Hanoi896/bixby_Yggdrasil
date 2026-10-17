@@ -33,6 +33,7 @@ fun MainAppScreen(
     targetTab: Int? = null,
     onTabConsumed: () -> Unit = {},
     onSendMessageToNpu: suspend (String) -> String = { "온디바이스 EXAONE 3.0에서 정상 처리되었습니다." },
+    onSendMessageToNpuStream: (suspend (String, (String) -> Unit) -> String)? = null,
     onEmergencyLockdown: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -103,6 +104,7 @@ fun MainAppScreen(
                 0 -> ChatScreen(
                     personaManager = personaManager,
                     onSendMessageToNpu = onSendMessageToNpu,
+                    onSendMessageToNpuStream = onSendMessageToNpuStream,
                     pendingQuery = pendingQuery,
                     onQueryConsumed = onQueryConsumed
                 )
@@ -116,7 +118,32 @@ fun MainAppScreen(
 
 @Composable
 fun MonoHomeTab(personaManager: UserPersonaManager) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val profile = remember { personaManager.getProfile() }
+    val growthManager = remember { com.yggdrasil.assistant.growth.WorldTreeGrowthManager.getInstance(context) }
+    var growthStatus by remember { mutableStateOf(growthManager.getGrowthStatus()) }
+
+    LaunchedEffect(Unit) {
+        growthStatus = growthManager.getGrowthStatus()
+    }
+
+    val ramText = remember {
+        try {
+            val actManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            val memInfo = android.app.ActivityManager.MemoryInfo()
+            actManager?.getMemoryInfo(memInfo)
+            if (memInfo.totalMem > 0) {
+                val totalGb = memInfo.totalMem.toDouble() / (1024.0 * 1024.0 * 1024.0)
+                val availGb = memInfo.availMem.toDouble() / (1024.0 * 1024.0 * 1024.0)
+                val usedGb = totalGb - availGb
+                String.format(java.util.Locale.US, "%.2f GB / %.1f GB (실측)", usedGb, totalGb)
+            } else {
+                "정상 가동 중"
+            }
+        } catch (_: Exception) {
+            "정상 가동 중"
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -140,6 +167,47 @@ fun MonoHomeTab(personaManager: UserPersonaManager) {
             }
         }
 
+        // 세계수(Yggdrasil) 실시간 성장 & 지혜 포인트(WP) 카드
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D0D)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(0xFF222222), RoundedCornerShape(12.dp))
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("세계수 성장 현황", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Lv.${growthStatus.level} ${growthStatus.stageCode}", color = Color(0xFF888888), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(growthStatus.stageName, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    progress = { (growthStatus.growthPercent / 100f).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = Color.White,
+                    trackColor = Color(0xFF222222)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("${growthStatus.wisdomPoints} WP", color = Color(0xFFCCCCCC), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("${growthStatus.growthPercent}% (다음: ${growthStatus.nextStageWp} WP)", color = Color(0xFF777777), fontSize = 11.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                MonoStatusRow("누적 대화", "${growthStatus.dialogueCount} 회")
+                MonoStatusRow("기억 아카이브", "${growthStatus.memoryCount} 건")
+                MonoStatusRow("자율 액션 완수", "${growthStatus.actionCount} 건")
+            }
+        }
+
         Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D0D)),
@@ -152,7 +220,7 @@ fun MonoHomeTab(personaManager: UserPersonaManager) {
                 Spacer(modifier = Modifier.height(10.dp))
                 MonoStatusRow("NPU 엔진", "LG EXAONE 3.0 2.4B Q4_K_M")
                 MonoStatusRow("연산 환경", "Qualcomm NPU (100% 로컬)")
-                MonoStatusRow("RAM 점유", "2.17 GB / 16.0 GB (안정)")
+                MonoStatusRow("RAM 점유", ramText)
                 MonoStatusRow("보안 상태", "L4 방어벽 가동 (SQLCipher)")
             }
         }

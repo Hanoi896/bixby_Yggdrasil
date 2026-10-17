@@ -40,6 +40,11 @@ class LocalLlmService : Service() {
 
         private const val NOTIFICATION_CHANNEL_ID = "yggdrasil_llm_channel"
         private const val NOTIFICATION_ID = 1001
+
+        @Volatile
+        private var activeInstance: LocalLlmService? = null
+
+        fun getInstance(): LocalLlmService? = activeInstance
     }
 
     private var tts: TextToSpeech? = null
@@ -50,6 +55,7 @@ class LocalLlmService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         initWakeLock()
         startForegroundServiceWithNotification()
         initTextToSpeech()
@@ -319,12 +325,38 @@ class LocalLlmService : Service() {
     data class ConversationTurn(val role: String, val content: String)
     private val sessionHistory = mutableListOf<ConversationTurn>()
 
+    fun interface StreamingTokenCallback {
+        fun onToken(token: String)
+    }
+
+    /**
+     * 장기 대화 슬라이딩 윈도우 & KV 캐시 오버플로우 방어
+     * 4096 토큰(한글 약 6,000자) 초과 시 구 대화를 1줄 요약문으로 자동 압축 교체하여 OOM 프로세스 킬 원천 방어
+     */
+    private fun ensureContextWindowUnderLimit() {
+        val totalChars = sessionHistory.sumOf { it.content.length }
+        if (totalChars > 6000 && sessionHistory.size > 4) {
+            val oldestTurns = sessionHistory.take(sessionHistory.size - 4)
+            val recentTurns = sessionHistory.takeLast(4)
+
+            val summaryText = "[이전 대화 압축 요약: " + oldestTurns.joinToString("; ") { turn ->
+                "${if (turn.role == "user") "사용자" else "보좌관"}: ${turn.content.take(25).replace("\n", " ")}..."
+            } + "]"
+
+            sessionHistory.clear()
+            sessionHistory.add(ConversationTurn("system", summaryText))
+            sessionHistory.addAll(recentTurns)
+            android.util.Log.i("LocalLlmService", "🛡️ [KV 캐시 오버플로우 방어] 4096 토큰 임계 초과 감지 -> 구 대화 1줄 자동 요약 압축 완료")
+        }
+    }
+
     /**
      * 페르소나 영구 고정(Pinning) 및 멀티턴 대화 세션 기반 추론
      * [과제 3 실전 구현]
      */
     fun generateWithPersona(systemPrompt: String, userQuery: String): String {
         return try {
+            ensureContextWindowUnderLimit()
             val roles = sessionHistory.map { it.role }.toTypedArray()
             val contents = sessionHistory.map { it.content }.toTypedArray()
             val response = generateChatNative(systemPrompt, roles, contents, userQuery)
@@ -336,6 +368,35 @@ class LocalLlmService : Service() {
             response
         } catch (e: UnsatisfiedLinkError) {
             "온디바이스 NPU 추론 라이브러리(yggdrasil_llm) 바인딩 대기 중입니다."
+        }
+    }
+
+    /**
+     * 실시간 스트리밍 토큰 기반 온디바이스 NPU 추론 (TTFT < 300ms 타자기 효과 직결)
+     */
+    fun generateWithPersonaStream(
+        systemPrompt: String,
+        userQuery: String,
+        onToken: (String) -> Unit
+    ): String {
+        return try {
+            ensureContextWindowUnderLimit()
+            val roles = sessionHistory.map { it.role }.toTypedArray()
+            val contents = sessionHistory.map { it.content }.toTypedArray()
+
+            val response = generateChatStreamNative(systemPrompt, roles, contents, userQuery) { token ->
+                onToken(token)
+            }
+
+            if (!response.startsWith("Error:")) {
+                sessionHistory.add(ConversationTurn("user", userQuery))
+                sessionHistory.add(ConversationTurn("assistant", response))
+            }
+            response
+        } catch (e: UnsatisfiedLinkError) {
+            val fallback = "온디바이스 NPU 추론 라이브러리(yggdrasil_llm) 바인딩 대기 중입니다."
+            onToken(fallback)
+            fallback
         }
     }
 
@@ -399,6 +460,9 @@ class LocalLlmService : Service() {
 
     override fun onDestroy() {
         stopLocalDaemon()
+        if (activeInstance == this) {
+            activeInstance = null
+        }
         super.onDestroy()
     }
 
@@ -413,6 +477,13 @@ class LocalLlmService : Service() {
         historyRoles: Array<String>,
         historyContents: Array<String>,
         currentPrompt: String
+    ): String
+    private external fun generateChatStreamNative(
+        systemPrompt: String,
+        historyRoles: Array<String>,
+        historyContents: Array<String>,
+        currentPrompt: String,
+        callback: StreamingTokenCallback
     ): String
     private external fun computeEmbeddingNative(text: String): FloatArray?
     private external fun getEngineStatsNative(): String

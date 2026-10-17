@@ -50,6 +50,9 @@ class ScreenOperatorController(
         safetyGuardrail.onEmergencyStopListener = {
             onEmergencyStopTriggered()
         }
+        YggdrasilAccessibilityService.getInstance()?.onUserPreemptionListener = {
+            onEmergencyStopTriggered()
+        }
     }
 
     private fun onEmergencyStopTriggered() {

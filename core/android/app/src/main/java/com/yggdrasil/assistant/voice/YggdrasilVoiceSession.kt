@@ -80,6 +80,9 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
             setOnClickListener {
                 hideSoftInput(this)
                 stopSpeechRecognition()
+                try {
+                    YggdrasilTtsManager.getInstance(context).stop()
+                } catch (_: Exception) {}
                 hide()
             }
         }
@@ -295,12 +298,26 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
         liveInputEditText?.let { hideSoftInput(it) }
         stopSpeechRecognition()
 
+        // 🌟 대화 끄거나 화면 닫히면 재생 중인 TTS 즉시 차단
+        try {
+            YggdrasilTtsManager.getInstance(context).stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "세션 종료 TTS 정지 실패", e)
+        }
+
         // 세션 종료 후 백그라운드 핫워드 상시 감시 복원
         try {
             YggdrasilHotwordDetector.getInstance(context).startListening()
         } catch (e: Exception) {
             Log.w(TAG, "핫워드 백그라운드 재개 중 예외", e)
         }
+    }
+
+    override fun onDestroy() {
+        try {
+            YggdrasilTtsManager.getInstance(context).stop()
+        } catch (_: Exception) {}
+        super.onDestroy()
     }
 
     /**
@@ -721,7 +738,36 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                 YggdrasilIntentPlanner.ActionIntent.DIRECT_ANSWER -> {
                     val factBuilder = FactContextBuilder.getInstance(context)
                     val factResult = factBuilder.buildEnrichedContext(cleanCommand)
-                    val answerText = factResult.directAnswer ?: plan.directResponse.ifBlank { "말씀하신 내용을 확인했습니다." }
+
+                    val answerText: String = if (!factResult.directAnswer.isNullOrBlank()) {
+                        factResult.directAnswer!!
+                    } else {
+                        // 🌟 100% 온디바이스 NPU 실제 지능형 추론 (하드코딩 앵무새 답변 영구 척결)
+                        val modelSync = com.yggdrasil.assistant.storage.ModelAutoSyncManager.getInstance(context)
+                        val model = modelSync.getActiveModelFile()
+                        val llmSvc = com.yggdrasil.assistant.llm.LocalLlmService.getInstance()
+
+                        if (model == null || !model.exists()) {
+                            "⚠️ 온디바이스 EXAONE 모델이 아직 탑재되지 않았습니다. 앱 설정 탭에서 모델을 가져와주세요."
+                        } else if (llmSvc != null) {
+                            if (!llmSvc.isRunning()) {
+                                llmSvc.startLocalDaemon(model.absolutePath)
+                            }
+                            llmSvc.generateWithPersona(factResult.systemPrompt, factResult.enrichedUserPrompt)
+                        } else {
+                            try {
+                                val sIntent = Intent(context, com.yggdrasil.assistant.llm.LocalLlmService::class.java).apply {
+                                    putExtra("MODEL_PATH", model.absolutePath)
+                                }
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    context.startForegroundService(sIntent)
+                                } else {
+                                    context.startService(sIntent)
+                                }
+                            } catch (_: Exception) {}
+                            "온디바이스 NPU 추론 엔진을 초기화 중입니다. 잠시 후 다시 말씀해 주세요."
+                        }
+                    }
 
                     withContext(Dispatchers.Main) {
                         responseCard?.visibility = View.VISIBLE

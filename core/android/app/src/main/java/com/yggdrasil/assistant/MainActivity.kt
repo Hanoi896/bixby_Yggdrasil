@@ -118,7 +118,10 @@ class MainActivity : ComponentActivity() {
                     pendingTargetTab.value = null
                 },
                 onSendMessageToNpu = { userQuery ->
-                    val query = userQuery.trim()
+                    val contextualResolver = com.yggdrasil.assistant.nlp.YggdrasilContextualResolver.getInstance(this@MainActivity)
+                    val query = contextualResolver.resolveDiscourseRepair(userQuery)
+                    contextualResolver.recordLastCommand(query)
+
                     val planner = com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.getInstance(this@MainActivity)
                     val plan = planner.planAction(query)
 
@@ -196,6 +199,101 @@ class MainActivity : ComponentActivity() {
                                         reply
                                     } else {
                                         "온디바이스 NPU 추론 엔진을 준비 중입니다. 잠시 후 다시 시도해 주세요."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                onSendMessageToNpuStream = { userQuery, onToken ->
+                    val contextualResolver = com.yggdrasil.assistant.nlp.YggdrasilContextualResolver.getInstance(this@MainActivity)
+                    val query = contextualResolver.resolveDiscourseRepair(userQuery)
+                    contextualResolver.recordLastCommand(query)
+
+                    val planner = com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.getInstance(this@MainActivity)
+                    val plan = planner.planAction(query)
+
+                    when (plan.intent) {
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.LAUNCH_APP,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.SEND_MESSAGE,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.PLAY_MEDIA,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.CONTROL_DEVICE,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.CHAINED_APP_ACTION,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.SYSTEM_NAV,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.SCROLL -> {
+                            val operator = com.yggdrasil.assistant.operator.AutoOperatorManager.getInstance(this@MainActivity)
+                            val report = operator.executeNaturalCommand(query)
+                            speakFeedback(report.message)
+                            val msg = "🤖 [자율 조작 집행 완료]\n\n${report.message}"
+                            onToken(msg)
+                            msg
+                        }
+
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.USER_FEEDBACK_CORRECTION -> {
+                            val learner = com.yggdrasil.assistant.nlp.UserFeedbackLearner.getInstance(this@MainActivity)
+                            val correction = learner.learnFromCorrection(query)
+                            speakFeedback(correction.message)
+                            if (correction.shouldReexecute && !correction.newAppName.isNullOrBlank()) {
+                                val op = com.yggdrasil.assistant.operator.AutoOperatorManager.getInstance(this@MainActivity)
+                                op.executeSendMessageDirect(correction.newAppName, correction.target ?: "", correction.content ?: "")
+                            }
+                            val msg = "🧠 [자가 교정 학습 완료]\n\n${correction.message}"
+                            onToken(msg)
+                            msg
+                        }
+
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.SEARCH_WEB -> {
+                            val searchEngine = com.yggdrasil.assistant.search.OnDeviceSearchGroundingEngine.getInstance()
+                            val searchRes = searchEngine.searchFact(query)
+                            val msg = if (searchRes.success) {
+                                speakFeedback(searchRes.snippet)
+                                "🌐 [실시간 웹 정보: ${searchRes.source}]\n\n${searchRes.snippet}"
+                            } else {
+                                "🌐 '${query}' 관련 검색 결과를 찾지 못했습니다."
+                            }
+                            onToken(msg)
+                            msg
+                        }
+
+                        else -> {
+                            val factBuilder = com.yggdrasil.assistant.rag.FactContextBuilder.getInstance(this@MainActivity)
+                            val factResult = factBuilder.buildEnrichedContext(query)
+
+                            if (factResult.directAnswer != null) {
+                                speakFeedback(factResult.directAnswer)
+                                onToken(factResult.directAnswer)
+                                factResult.directAnswer
+                            } else if (query.contains("텔레그램") && (query.contains("테스트") || query.contains("전송") || query.contains("보내"))) {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    val messengerClient = SleipnirMessengerClient.getInstance(this@MainActivity)
+                                    val res = messengerClient.testTelegramConnection()
+                                    val msg = if (res.success) {
+                                        "✈️ [텔레그램 전송 성공]\n등록된 Telegram Bot API를 통해 테스트 메시지를 성공적으로 발송했습니다."
+                                    } else {
+                                        "🚨 [텔레그램 전송 실패]\n사유: ${res.detailMessage}\n[설정] 탭의 [텔레그램 봇 메신저 연동]에서 Token과 Chat ID를 확인해주세요."
+                                    }
+                                    onToken(msg)
+                                    msg
+                                }
+                            } else {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                    val model = modelSyncManager.getActiveModelFile()
+                                    val svc = llmService
+                                    if (model == null || !model.exists()) {
+                                        val msg = "⚠️ 온디바이스 EXAONE 모델이 아직 탑재되지 않았습니다.\n상단 [설정] 탭의 [온디바이스 AI 모델]에서 .gguf 파일을 가져와주세요."
+                                        onToken(msg)
+                                        msg
+                                    } else if (svc != null) {
+                                        if (!svc.isRunning()) {
+                                            svc.startLocalDaemon(model.absolutePath)
+                                        }
+                                        val reply = svc.generateWithPersonaStream(factResult.systemPrompt, factResult.enrichedUserPrompt, onToken)
+                                        speakFeedback(reply)
+                                        reply
+                                    } else {
+                                        val msg = "온디바이스 NPU 추론 엔진을 준비 중입니다. 잠시 후 다시 시도해 주세요."
+                                        onToken(msg)
+                                        msg
                                     }
                                 }
                             }
@@ -315,6 +413,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        tts?.stop()
+        try {
+            com.yggdrasil.assistant.voice.YggdrasilTtsManager.getInstance(this).stop()
+        } catch (_: Exception) {}
+    }
+
+    override fun onStop() {
+        super.onStop()
+        tts?.stop()
+        try {
+            com.yggdrasil.assistant.voice.YggdrasilTtsManager.getInstance(this).stop()
+        } catch (_: Exception) {}
+    }
+
     override fun onDestroy() {
         if (isBound) {
             unbindService(serviceConnection)
@@ -325,6 +439,9 @@ class MainActivity : ComponentActivity() {
             tts?.shutdown()
             tts = null
         }
+        try {
+            com.yggdrasil.assistant.voice.YggdrasilTtsManager.getInstance(this).stop()
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 }

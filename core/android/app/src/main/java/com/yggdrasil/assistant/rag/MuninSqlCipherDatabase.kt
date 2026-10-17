@@ -327,14 +327,65 @@ class MuninSqlCipherDatabase(
     /**
      * 1차 인덱스 필터링 + LRU 캐시 + 벡터 내적 기반 초고속 시맨틱 검색
      */
+    /**
+     * 한국어 조사/불용어 분리 및 고유명사/키워드 BM25 점수 산정
+     */
+    private fun computeKoreanBm25Score(queryKeywords: List<String>, content: String): Float {
+        if (queryKeywords.isEmpty() || content.isBlank()) return 0f
+        val lowerContent = content.lowercase()
+        var matchCount = 0
+        var totalWeight = 0f
+
+        for (kw in queryKeywords) {
+            val weight = if (kw.length >= 3) 1.5f else 1.0f
+            totalWeight += weight
+            if (lowerContent.contains(kw)) {
+                // 키워드 출현 빈도 포화 함수 (TF / (TF + 1.2))
+                val occurrences = lowerContent.split(kw).size - 1
+                val tfScore = (occurrences * 2.2f) / (occurrences + 1.2f)
+                matchCount++
+                totalWeight += (tfScore * weight)
+            }
+        }
+        return (matchCount.toFloat() / queryKeywords.size) * 0.7f + (totalWeight.coerceAtMost(3.0f) / 3.0f) * 0.3f
+    }
+
+    private fun extractKoreanKeywords(text: String): List<String> {
+        val particles = setOf(
+            "에게", "에서", "으로", "로써", "로서", "하고", "이나", "이나마", "부터", "까지",
+            "은", "는", "이", "가", "을", "를", "의", "와", "과", "에", "로"
+        )
+        val tokens = text.lowercase().replace(Regex("[^a-zA-Z0-9가-힣\\s]"), " ").split("\\s+".toRegex())
+        val keywords = mutableListOf<String>()
+
+        for (token in tokens) {
+            val trimmed = token.trim()
+            if (trimmed.length < 2) continue
+            var stem = trimmed
+            for (p in particles) {
+                if (stem.endsWith(p) && stem.length > p.length + 1) {
+                    stem = stem.removeSuffix(p)
+                    break
+                }
+            }
+            if (stem.length >= 2) {
+                keywords.add(stem)
+            }
+        }
+        return keywords.distinct()
+    }
+
+    /**
+     * 1차 인덱스 필터링 + LRU 캐시 + Dense(코사인) + Sparse(한국어 BM25) + 시간 감쇠(Time-Decay) 하이브리드 RAG 검색
+     */
     fun searchSimilarMemories(
         queryText: String,
         targetCategory: String? = null,
         limit: Int = 5,
-        minSimilarity: Float = 0.35f
+        minSimilarity: Float = 0.30f
     ): List<MemoryRecord> {
-        val startTime = System.currentTimeMillis()
         val queryVector = embeddingEngine.embedText(queryText)
+        val queryKeywords = extractKoreanKeywords(queryText)
         val db = getEncryptedReadableDb()
 
         val selection = if (targetCategory != null) "$COL_CATEGORY = ?" else null
@@ -353,6 +404,7 @@ class MuninSqlCipherDatabase(
         )
 
         val candidates = mutableListOf<MemoryRecord>()
+        val nowMs = System.currentTimeMillis()
 
         cursor.use {
             val idIdx = it.getColumnIndexOrThrow(COL_ID)
@@ -365,26 +417,49 @@ class MuninSqlCipherDatabase(
 
             while (it.moveToNext()) {
                 val recordId = it.getString(idIdx)
+                val content = it.getString(contentIdx)
+                val timestampStr = it.getString(timeIdx)
+                val importance = it.getInt(impIdx)
+                val isDialogue = it.getInt(diaIdx) == 1
 
+                // 1. Dense 임베딩 코사인 유사도
                 var recordVector = vectorCache.get(recordId)
                 if (recordVector == null) {
                     val blob = it.getBlob(embIdx)
                     recordVector = embeddingEngine.blobToVector(blob)
                     vectorCache.put(recordId, recordVector)
                 }
+                val cosineSim = embeddingEngine.calculateCosineSimilarity(queryVector, recordVector)
 
-                val similarity = embeddingEngine.calculateCosineSimilarity(queryVector, recordVector)
+                // 2. Sparse 한국어 BM25 키워드 일치 점수
+                val bm25Score = computeKoreanBm25Score(queryKeywords, content)
 
-                if (similarity >= minSimilarity) {
+                // 3. 타임스탬프 파싱 및 시간 감쇠(Time-Decay) 계산
+                val recordTimeMs = try {
+                    java.time.Instant.parse(timestampStr).toEpochMilli()
+                } catch (_: Exception) {
+                    try { timestampStr.toLong() } catch (_: Exception) { nowMs }
+                }
+                val deltaDays = kotlin.math.max(0.0, (nowMs - recordTimeMs) / (1000.0 * 86400.0))
+
+                // 중요도 4 이상(고정 선호도/비상연락망)은 시간 감쇠 면제, 일반 대화/잡담은 180일(6개월) 경과 시 감쇠 적용
+                val lambda = if (importance >= 4) 0.0005 else if (isDialogue) 0.018 else 0.008
+                val timeDecay = kotlin.math.exp(-lambda * deltaDays).toFloat()
+
+                // 4. 하이브리드 결합 점수 산출 (Dense 55% + BM25 45%) * TimeDecay
+                val rawHybrid = (cosineSim * 0.55f) + (bm25Score * 0.45f)
+                val finalScore = rawHybrid * timeDecay
+
+                if (finalScore >= minSimilarity || (bm25Score >= 0.8f && timeDecay >= 0.4f)) {
                     candidates.add(
                         MemoryRecord(
                             id = recordId,
                             category = it.getString(catIdx),
-                            content = it.getString(contentIdx),
-                            timestamp = it.getString(timeIdx),
-                            importance = it.getInt(impIdx),
-                            isDialogue = it.getInt(diaIdx) == 1,
-                            similarity = similarity
+                            content = content,
+                            timestamp = timestampStr,
+                            importance = importance,
+                            isDialogue = isDialogue,
+                            similarity = finalScore
                         )
                     )
                 }

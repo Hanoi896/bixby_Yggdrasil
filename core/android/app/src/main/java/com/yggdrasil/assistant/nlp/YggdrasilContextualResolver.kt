@@ -32,23 +32,92 @@ class YggdrasilContextualResolver private constructor(private val context: Conte
             "이 사람", "그 사람", "이분", "그분", "걔",
             "방금 그거", "아까 그거", "그 앱"
         )
+        // 오발화(Discourse Repair) 트리거 패턴 목록
+        private val REPAIR_PATTERNS = listOf(
+            "아니 그거 말고", "아니 그것 말고", "아니 말고", "그거 말고", "그것 말고",
+            "아니 취소하고", "취소하고", "그게 아니라", "아니 그게 아니고", "말고 다시", "다시 해줘"
+        )
     }
 
     // 최근 대화 맥락 메모리 (최대 5개 엔티티 유지)
     private val recentContextEntities = java.util.concurrent.ConcurrentLinkedDeque<String>()
+    @Volatile
+    private var lastExecutedCommand: String? = null
+
+    fun recordLastCommand(command: String) {
+        lastExecutedCommand = command.trim()
+    }
 
     /**
-     * 대화가 발생할 때마다 주요 엔티티(명사) 기록
+     * 오발화 복원(Discourse Fallback)
+     * 사용자가 말을 더듬거나 도중에 바꿀 때 ("아니 그거 말고 엄마한테 카톡으로")
+     * 직전 명령의 엔티티(대상, 내용)를 유지하며 새로 정정한 부분만 정밀 치환 복원
      */
-    fun recordEntity(entity: String, type: String = "GENERAL") {
-        val clean = entity.trim()
-        if (clean.length in 2..20) {
-            recentContextEntities.remove(clean)
-            recentContextEntities.addFirst(clean)
-            if (recentContextEntities.size > 5) {
-                recentContextEntities.removeLast()
-            }
+    fun resolveDiscourseRepair(sentence: String): String {
+        val trimmed = sentence.trim()
+        val repairTrigger = REPAIR_PATTERNS.firstOrNull { trimmed.startsWith(it) || trimmed.contains(it) }
+            ?: return resolveContext(trimmed)
+
+        val previous = lastExecutedCommand
+        if (previous.isNullOrBlank()) {
+            val stripped = trimmed.replace(repairTrigger, "").trim()
+            return resolveContext(stripped)
         }
+
+        Log.i(TAG, "🗣️ [오발화/말바꿈 담화 복원 감지]: '$trimmed' (직전 발화: '$previous')")
+
+        // 수신인/앱/내용 분석
+        val prevApp = when {
+            previous.contains("카톡") || previous.contains("카카오톡") -> "카카오톡"
+            previous.contains("문자") || previous.contains("메시지") -> "문자"
+            previous.contains("텔레그램") -> "텔레그램"
+            previous.contains("라인") -> "라인"
+            previous.contains("유튜브") -> "유튜브"
+            previous.contains("네이버") -> "네이버"
+            else -> ""
+        }
+
+        // 대상 인물(방) 추출 ("엄마한테", "홍길동에게" 등)
+        val targetRegex = Regex("([가-힣a-zA-Z0-9]+)(한테|에게|방에)")
+        val prevTargetMatch = targetRegex.find(previous)
+        val prevTarget = prevTargetMatch?.value ?: ""
+
+        // 따옴표나 본문 내용 추출
+        val prevContent = if (previous.contains("'") || previous.contains("\"")) {
+            Regex("['\"](.*?)['\"]").find(previous)?.value ?: ""
+        } else ""
+
+        val newIntentPart = trimmed.replace(repairTrigger, "").trim()
+
+        // 새 발화에 새로운 대상이 있으면 교체, 없으면 직전 대상 계승
+        val newTargetMatch = targetRegex.find(newIntentPart)
+        val effectiveTarget = newTargetMatch?.value ?: prevTarget
+
+        // 새 발화에 새로운 앱이 있으면 교체, 없으면 직전 앱 계승
+        val newApp = when {
+            newIntentPart.contains("카톡") || newIntentPart.contains("카카오톡") -> "카카오톡"
+            newIntentPart.contains("문자") || newIntentPart.contains("메시지") -> "문자"
+            newIntentPart.contains("텔레그램") -> "텔레그램"
+            newIntentPart.contains("라인") -> "라인"
+            else -> prevApp
+        }
+
+        // 새 발화에 별도 메시지 내용이 없으면 직전 메시지 계승
+        val resolved = StringBuilder()
+        if (effectiveTarget.isNotBlank()) {
+            resolved.append(effectiveTarget).append(" ")
+        }
+        if (newApp.isNotBlank()) {
+            resolved.append(newApp).append(" ")
+        }
+        if (prevContent.isNotBlank() && !newIntentPart.contains("'") && !newIntentPart.contains("\"")) {
+            resolved.append(prevContent).append(" ")
+        }
+        resolved.append(newIntentPart.replace(effectiveTarget, "").replace(newApp, "").trim())
+
+        val resultText = resolved.toString().replace(Regex("\\s+"), " ").trim()
+        Log.i(TAG, "🎯 [오발화 복원 완료]: '$trimmed' -> '$resultText'")
+        return resultText.ifBlank { resolveContext(trimmed) }
     }
 
     /**

@@ -16,6 +16,7 @@ typedef void* jstring;
 typedef void* jarray;
 typedef void* jobjectArray;
 typedef void* jfloatArray;
+typedef void* jmethodID;
 typedef unsigned char jboolean;
 typedef int jint;
 typedef int jsize;
@@ -33,6 +34,9 @@ struct JNIEnv {
     void DeleteLocalRef(jobject) {}
     bool ExceptionCheck() { return false; }
     void ExceptionClear() {}
+    jclass GetObjectClass(jobject) { return nullptr; }
+    jmethodID GetMethodID(jclass, const char*, const char*) { return nullptr; }
+    void CallVoidMethod(jobject, jmethodID, ...) {}
 };
 #endif
 
@@ -215,6 +219,107 @@ Java_com_yggdrasil_assistant_llm_LocalLlmService_generateChatNative(
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         LOGE("JNI 경계 예외 감지 -> ExceptionClear() 호출로 네이티브 SIGSEGV 크래시 차단");
+    }
+
+    return env->NewStringUTF(response.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_yggdrasil_assistant_llm_LocalLlmService_generateChatStreamNative(
+    JNIEnv *env,
+    jobject /* this */,
+    jstring systemPrompt_,
+    jobjectArray historyRoles_,
+    jobjectArray historyContents_,
+    jstring currentPrompt_,
+    jobject callback_
+) {
+    if (!g_runtime || !g_runtime->isLoaded()) {
+        return env->NewStringUTF("Error: Model not loaded");
+    }
+
+    std::vector<ChatMessage> messages;
+
+    // 1. 고정 시스템 프롬프트(페르소나) 주입
+    if (systemPrompt_ != nullptr) {
+        const char *sysPrompt = env->GetStringUTFChars(systemPrompt_, nullptr);
+        if (sysPrompt) {
+            messages.push_back({"system", sysPrompt});
+            env->ReleaseStringUTFChars(systemPrompt_, sysPrompt);
+        }
+    }
+    if (messages.empty()) {
+        messages.push_back({"system", "당신은 갤럭시 S26 울트라 온디바이스 개인 비서 Yggdrasil입니다."});
+    }
+
+    // 2. 대화 히스토리 주입
+    if (historyRoles_ != nullptr && historyContents_ != nullptr) {
+        jsize roleCount = env->GetArrayLength(historyRoles_);
+        jsize contentCount = env->GetArrayLength(historyContents_);
+        jsize count = (roleCount < contentCount) ? roleCount : contentCount;
+
+        for (jsize i = 0; i < count; ++i) {
+            jstring rStr = (jstring)env->GetObjectArrayElement(historyRoles_, i);
+            jstring cStr = (jstring)env->GetObjectArrayElement(historyContents_, i);
+
+            if (rStr && cStr) {
+                const char *rChars = env->GetStringUTFChars(rStr, nullptr);
+                const char *cChars = env->GetStringUTFChars(cStr, nullptr);
+
+                if (rChars && cChars) {
+                    messages.push_back({rChars, cChars});
+                }
+
+                if (rChars) env->ReleaseStringUTFChars(rStr, rChars);
+                if (cChars) env->ReleaseStringUTFChars(cStr, cChars);
+            }
+
+            if (rStr) env->DeleteLocalRef(rStr);
+            if (cStr) env->DeleteLocalRef(cStr);
+        }
+    }
+
+    // 3. 현재 사용자 프롬프트 주입
+    if (currentPrompt_ != nullptr) {
+        const char *curPrompt = env->GetStringUTFChars(currentPrompt_, nullptr);
+        if (curPrompt) {
+            messages.push_back({"user", curPrompt});
+            env->ReleaseStringUTFChars(currentPrompt_, curPrompt);
+        }
+    }
+
+    // 4. Java/Kotlin 토큰 콜백 메서드 탐색
+    jmethodID onTokenMethod = nullptr;
+    if (callback_ != nullptr) {
+        jclass cbClass = env->GetObjectClass(callback_);
+        if (cbClass != nullptr) {
+            onTokenMethod = env->GetMethodID(cbClass, "onToken", "(Ljava/lang/String;)V");
+            env->DeleteLocalRef(cbClass);
+        }
+    }
+
+    std::string response;
+    try {
+        response = g_runtime->generateStream(messages, [&](const std::string& token) {
+            if (callback_ != nullptr && onTokenMethod != nullptr && !token.empty()) {
+                jstring tokenStr = env->NewStringUTF(token.c_str());
+                if (tokenStr != nullptr) {
+                    env->CallVoidMethod(callback_, onTokenMethod, tokenStr);
+                    env->DeleteLocalRef(tokenStr);
+                    if (env->ExceptionCheck()) {
+                        env->ExceptionClear();
+                    }
+                }
+            }
+        });
+    } catch (const std::exception &e) {
+        LOGE("generateChatStreamNative C++ 예외 발생: %s", e.what());
+        return env->NewStringUTF("Error: Native streaming inference failed");
+    }
+
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("generateChatStreamNative JNI 경계 예외 감지 -> ExceptionClear() 호출");
     }
 
     return env->NewStringUTF(response.c_str());

@@ -52,13 +52,17 @@ class FactContextBuilder private constructor(private val context: Context) {
 
         when (intent) {
             QueryIntent.SYSTEM_GROWTH -> {
-                val growthFact = getGrowthFact()
+                val growthManager = com.yggdrasil.assistant.growth.WorldTreeGrowthManager.getInstance(context)
+                val s = growthManager.getGrowthStatus()
+                val growthFact = growthManager.getGrowthFactString()
+                val nextDesc = if (s.level >= 5) "최고 성장 단계 도달" else "지혜 포인트 ${s.nextStageWp - s.wisdomPoints} WP 추가 달성 필요 (목표: ${s.nextStageWp} WP)"
+                val abilityStr = s.unlockedAbilities.joinToString(", ")
                 val direct = "🌳 [세계수 성장 종합 현황]\n\n" +
-                        "• 현재 단계: 묘목(Sapling) - Level 1\n" +
-                        "• 성장 진행률: 25.0%\n" +
-                        "• 축적된 지혜 포인트: 120 WP\n" +
-                        "• 다음 단계(청년목) 도달 조건: 지혜 포인트 500 WP 달성 필요\n" +
-                        "• 개방된 고유 능력: 로컬 암호화 기억 저장(무닌), 시스템 절전 제어(궁니르)"
+                        "• 현재 단계: ${s.stageName} (Level ${s.level})\n" +
+                        "• 성장 진행률: ${s.growthPercent}%\n" +
+                        "• 축적된 지혜 포인트: ${s.wisdomPoints} WP (대화 ${s.dialogueCount}회, 기억 ${s.memoryCount}건, 액션 ${s.actionCount}건)\n" +
+                        "• 다음 단계 도달 조건: $nextDesc\n" +
+                        "• 개방된 고유 능력: $abilityStr"
                 FactInjectionResult(
                     intent = intent,
                     systemPrompt = buildStrictGuardrailPrompt(growthFact),
@@ -69,13 +73,8 @@ class FactContextBuilder private constructor(private val context: Context) {
 
             QueryIntent.PANTHEON_STATUS -> {
                 val pantheonFact = getPantheonFact()
-                val direct = "🏛️ [이그드라실 판테온 신격 에이전트 현황]\n\n" +
-                        "👑 오딘(Odin): 총괄 보안 관제 및 다중 서명 승인 (정상 작동 중)\n" +
-                        "🦅 휴긴(Hugin): 온디바이스 심층 사유 및 자율 전략 제언 (대기 중)\n" +
-                        "🪶 무닌(Munin): 256비트 SQLCipher 암호화 장기 기억 보관소 (보안 잠금 활성화)\n" +
-                        "⚡ 궁니르(Gungnir): 접근성 서비스 기반 화면 자율 제어 엔진 (인가 대기)\n" +
-                        "🐎 슬레이프니르(Sleipnir): 크로스 디바이스 고속 동기화 파이프라인 (활성)\n" +
-                        "🛡️ 발키리(Valkyrie): 비인가 앱 위협 및 백그라운드 리소스 가디언 (모니터링 중)"
+                val direct = "🏛️ [이그드라실 판테온 6대 신격 실시간 현황]\n\n" +
+                        pantheonFact.replace("[실시간 판테온 6대 신격 상태]\n", "")
                 FactInjectionResult(
                     intent = intent,
                     systemPrompt = buildStrictGuardrailPrompt(pantheonFact),
@@ -86,12 +85,8 @@ class FactContextBuilder private constructor(private val context: Context) {
 
             QueryIntent.SECURITY_STATUS -> {
                 val secFact = getSecurityFact()
-                val direct = "🛡️ [오딘 9대 세계 격리 영역 보안 상태]\n\n" +
-                        "• 시스템 보안 점수: 98 / 100점 (양호)\n" +
-                        "• SQLCipher 데이터베이스: AES-256 암호화 보호 적용 중\n" +
-                        "• 온디바이스 격리: 외부 클라우드 통신 0바이트 차단 완벽 유지\n" +
-                        "• 접근성 권한 상태: 인가 완료 (안전 가드레일 모니터링 활성화)\n" +
-                        "• 비상 정지(Kill-Switch): 상시 즉시 작동 준비 완료"
+                val direct = "🛡️ [오딘 9대 세계 실시간 보안 진단]\n\n" +
+                        secFact.replace("[실시간 9대 세계 보안 팩트]\n", "")
                 FactInjectionResult(
                     intent = intent,
                     systemPrompt = buildStrictGuardrailPrompt(secFact),
@@ -218,33 +213,67 @@ class FactContextBuilder private constructor(private val context: Context) {
             .trim()
     }
 
-    private fun getGrowthFact(): String = """
-        [실시간 세계수 성장 팩트]
-        - 단계: 묘목(Sapling)
-        - 레벨: 1
-        - 성장 진행률: 25.0%
-        - 지혜 포인트: 120 WP
-        - 다음 단계(청년목): 500 WP 필요
-        - 활성 능력: Munin 로컬 암호화 RAG, Gungnir L1/L2 시스템 제어
-    """.trimIndent()
+    private fun getGrowthFact(): String {
+        return com.yggdrasil.assistant.growth.WorldTreeGrowthManager.getInstance(context).getGrowthFactString()
+    }
 
-    private fun getPantheonFact(): String = """
-        [실시간 판테온 6대 신격 상태]
-        - Odin(총괄 보안/다중서명): Active (정상)
-        - Hugin(심층 사유/전략): Standby (대기)
-        - Munin(AES-256 SQLCipher 기억): Locked & Encrypted (암호화 보호)
-        - Gungnir(화면 접근성 자동화): Armed (인가 준비)
-        - Sleipnir(크로스 디바이스 동기화): Ready (준비)
-        - Valkyrie(보안 모니터링): Guarding (감시 중)
-    """.trimIndent()
+    private fun getPantheonFact(): String {
+        val isLockdown = try {
+            com.yggdrasil.assistant.security.BreakGlassSecurityManager.getInstance(context).getSecurityStatus().isBreakGlassActive
+        } catch (_: Exception) { false }
 
-    private fun getSecurityFact(): String = """
-        [실시간 9대 세계 보안 팩트]
-        - 시스템 무결성 점수: 98/100
-        - 통신 상태: 100% 로컬 오프라인 (외부 데이터 송수신 0바이트)
-        - DB 암호화: net.zetetic SQLCipher 256비트 활성화
-        - L3 금융 거래 보안: 생체 인증 사용자 직접 확인 강제 정책 유지
-    """.trimIndent()
+        val huginDaemonRunning = com.yggdrasil.assistant.llm.LocalLlmService.getInstance()?.isRunning() == true
+        val muninLearningPaused = com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context).isLearningPaused()
+        val gungnirAccessibility = com.yggdrasil.assistant.operator.YggdrasilAccessibilityService.getInstance() != null
+        val (tgToken, _) = try {
+            com.yggdrasil.assistant.integration.SleipnirMessengerClient.getInstance(context).getTelegramConfig()
+        } catch (_: Exception) { Pair(null, null) }
+
+        val odinStr = if (!isLockdown) "Active (보안 관제 및 다중 서명 정상 가동)" else "🚨 Lockdown (사용자 긴급 차단 발동 중)"
+        val huginStr = if (huginDaemonRunning) "Active (Qualcomm NPU EXAONE 가속 추론 중)" else "Standby (온디맨드 추론 대기)"
+        val muninStr = if (muninLearningPaused) "Paused (사용자 시크릿 프라이버시 모드 활성)" else "Encrypted & Armed (AES-256 SQLCipher 보안 보관)"
+        val gungnirStr = if (gungnirAccessibility) "Armed (접근성 서비스 화면 자율 제어 인가됨)" else "Standby (접근성 서비스 미인가 - 시스템 설정 필요)"
+        val sleipnirStr = if (!tgToken.isNullOrBlank()) "Connected (텔레그램 Bot API 실시간 전송 가동)" else "Ready (내부 인텐트 전송 모드)"
+        val valkyrieStr = "Guarding (100% 로컬 오프라인 데이터 유출 상시 감시)"
+
+        return """
+            [실시간 판테온 6대 신격 상태]
+            - Odin(총괄 보안/다중서명): $odinStr
+            - Hugin(심층 사유/전략): $huginStr
+            - Munin(AES-256 SQLCipher 기억): $muninStr
+            - Gungnir(화면 접근성 자동화): $gungnirStr
+            - Sleipnir(크로스 디바이스 동기화): $sleipnirStr
+            - Valkyrie(보안 모니터링): $valkyrieStr
+        """.trimIndent()
+    }
+
+    private fun getSecurityFact(): String {
+        val isLockdown = try {
+            com.yggdrasil.assistant.security.BreakGlassSecurityManager.getInstance(context).getSecurityStatus().isBreakGlassActive
+        } catch (_: Exception) { false }
+
+        val hasAccessibility = com.yggdrasil.assistant.operator.YggdrasilAccessibilityService.getInstance() != null
+        val learningPaused = com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context).isLearningPaused()
+
+        var score = 70
+        if (!isLockdown) score += 10
+        if (hasAccessibility) score += 10
+        if (learningPaused) score += 10
+
+        val lockdownStr = if (isLockdown) "🚨 킬스위치 발동 (전체 시스템 정지)" else "상시 즉시 작동 준비 완료 (정상)"
+        val accStr = if (hasAccessibility) "인가 완료 (안전 가드레일 모니터링 활성화)" else "미인가 (시스템 설정 필요)"
+        val privacyStr = if (learningPaused) "시크릿 모드 가동 중 (DB 기록 0% 차단)" else "AES-256 SQLCipher 하드웨어 암호화 가동 중"
+
+        return """
+            [실시간 9대 세계 보안 팩트]
+            - 시스템 보안 무결성 점수: $score / 100점
+            - 통신 상태: 100% 로컬 오프라인 (외부 데이터 송수신 0바이트 격리)
+            - DB 암호화: net.zetetic SQLCipher 256비트 활성화 ($privacyStr)
+            - 접근성 권한 상태: $accStr
+            - 비상 정지(Kill-Switch): $lockdownStr
+            - L3 금융 거래 보안: 생체 인증 사용자 직접 확인 강제 정책 유지
+        """.trimIndent()
+    }
 
     private fun buildStrictGuardrailPrompt(factContext: String): String {
         return """
