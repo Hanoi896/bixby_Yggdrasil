@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import com.yggdrasil.assistant.persona.UserPersonaManager
 import kotlinx.coroutines.launch
 
@@ -50,6 +53,7 @@ fun ChatScreen(
     pendingQuery: String? = null,
     onQueryConsumed: () -> Unit = {}
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val profile = remember { personaManager.getProfile() }
@@ -65,6 +69,34 @@ fun ChatScreen(
                 text = "${profile.userCallName}, 무엇을 도와드릴까요? 일정을 확인하거나 파일 압축, 화면 제어 등 편하게 말씀해 주세요."
             )
         )
+    }
+
+    // 앱 구동 시 Munin SQLCipher 암호화 DB에서 직전 대화 기록 30건 자동 복원 (기억 영속화)
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val munin = com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context)
+            val history = munin.loadRecentDialogues(30)
+            if (history.isNotEmpty()) {
+                val loaded = mutableListOf<ChatMessage>()
+                for (mem in history) {
+                    val lines = mem.content.split("\n")
+                    val userLine = lines.firstOrNull { it.startsWith("[사용자] ") }?.removePrefix("[사용자] ")
+                    val assistantLine = lines.firstOrNull { it.startsWith("[Yggdrasil] ") }?.removePrefix("[Yggdrasil] ")
+                    if (!userLine.isNullOrBlank()) {
+                        loaded.add(ChatMessage(sender = SenderType.USER, text = userLine, timestamp = mem.timestamp))
+                    }
+                    if (!assistantLine.isNullOrBlank()) {
+                        loaded.add(ChatMessage(sender = SenderType.ASSISTANT, text = assistantLine, timestamp = mem.timestamp))
+                    }
+                }
+                if (loaded.isNotEmpty()) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        messages.clear()
+                        messages.addAll(loaded)
+                    }
+                }
+            }
+        }
     }
 
     val quickChips = listOf(
@@ -88,6 +120,11 @@ fun ChatScreen(
             messages.add(ChatMessage(sender = SenderType.ASSISTANT, text = response))
             isThinking = false
             listState.animateScrollToItem(messages.size - 1)
+
+            // Munin AES-256 SQLCipher 암호화 DB에 실시간 대화 아카이빙 (RAG 영구 기억 연동)
+            launch(kotlinx.coroutines.Dispatchers.IO) {
+                com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context).archiveDialogue(trimmed, response)
+            }
         }
     }
 
@@ -181,10 +218,11 @@ fun ChatScreen(
                 }
             }
 
-            // 3. 하단 Black & White 입력 바
+            // 3. 하단 Black & White 입력 바 (키보드 연동 imePadding 적용)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .imePadding()
                     .border(1.dp, Color(0xFF1A1A1A), RoundedCornerShape(0.dp))
                     .background(Color(0xFF000000))
                     .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -196,6 +234,12 @@ fun ChatScreen(
                     placeholder = {
                         Text("메시지를 입력하세요...", color = Color(0xFF555555), fontSize = 14.sp)
                     },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = {
+                        if (inputText.isNotBlank() && !isThinking) {
+                            sendMessage(inputText)
+                        }
+                    }),
                     modifier = Modifier
                         .weight(1f)
                         .padding(end = 10.dp),

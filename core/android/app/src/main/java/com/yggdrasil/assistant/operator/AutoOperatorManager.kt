@@ -50,6 +50,27 @@ class AutoOperatorManager private constructor(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var touchIndicatorView: View? = null
 
+    // 🛡️ 금융 및 결제 보안 앱 블랙리스트 (FLAG_SECURE 및 오송금 사고 방지)
+    private val SECURE_FINANCE_PACKAGES = setOf(
+        "viva.republica.toss",
+        "com.kakaobank.channel",
+        "com.kakaopay.app",
+        "com.kbstar.kbbank",
+        "com.shinhan.sbanking",
+        "nh.smart.banking",
+        "com.ibk.neobanking",
+        "com.wooribank.smart.npib",
+        "com.hanabank.ebk.channel.android.hananbank",
+        "com.samsung.android.spay",
+        "com.samsung.android.rajaampat"
+    )
+
+    private fun isSecureScreen(service: YggdrasilAccessibilityService): Boolean {
+        val root = service.rootInActiveWindow ?: return false
+        val pkg = root.packageName?.toString() ?: ""
+        return SECURE_FINANCE_PACKAGES.any { pkg.contains(it) }
+    }
+
     /**
      * 사용자 자연어 지시에 따른 자율 화면 조작 수행
      * 예: "유튜브 켜줘", "스크롤 내려줘", "인스타그램 켜줘", "뒤로가", "홈으로"
@@ -62,6 +83,12 @@ class AutoOperatorManager private constructor(private val context: Context) {
         val service = YggdrasilAccessibilityService.getInstance()
         if (service == null) {
             return@withContext ExecutionReport(false, "접근성 서비스가 비활성화되어 있습니다. 설정에서 활성화해주세요.")
+        }
+
+        // 🛡️ 금융/결제 화면 진입 감지 시 사용자 안전 보호 (P0 가드레일)
+        if (isSecureScreen(service)) {
+            Log.w(TAG, "🛡️ [보안 가드레일] 금융/결제 앱 화면 감지 -> 자율 조작 즉시 차단")
+            return@withContext ExecutionReport(false, "금융 및 결제 화면에서는 안전을 위해 자율 화면 조작이 제한됩니다. 직접 조작해 주세요.")
         }
 
         // 1. 시스템 내비게이션 명령 ("홈", "홈으로", "홈 화면", "홈 화면으로 가줘", "바탕화면", "메인 화면", "뒤로", "최근 앱")
@@ -229,6 +256,20 @@ class AutoOperatorManager private constructor(private val context: Context) {
         }.trim()
 
         Log.i(TAG, "⛓️ [복합 메시지 파싱 완료]: 앱=$appName, 대상=$targetPerson, 내용=\"$messageText\"")
+        return executeSendMessageDirect(appName, targetPerson, messageText, service)
+    }
+
+    /**
+     * 특정 앱, 대상, 메시지를 화면 자동화(Accessibility)로 즉시 다이렉트 전송
+     */
+    suspend fun executeSendMessageDirect(
+        appName: String,
+        targetPerson: String,
+        messageText: String,
+        serviceParam: YggdrasilAccessibilityService? = null
+    ): ExecutionReport = withContext(Dispatchers.Default) {
+        val service = serviceParam ?: YggdrasilAccessibilityService.getInstance()
+            ?: return@withContext ExecutionReport(false, "접근성 서비스가 비활성화되어 있습니다.")
 
         // 1단계: 앱 실행
         launchAppByName(appName)
@@ -283,21 +324,34 @@ class AutoOperatorManager private constructor(private val context: Context) {
             editNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             delay(400)
 
-            // 4단계: 전송 버튼 클릭
+            // 4단계: 전송 버튼 탐색 및 클릭 (다중 별칭 매칭 + 키보드 엔터 폴백)
             val sendNode = findBestMatchingNode(service, "전송")
                 ?: findBestMatchingNode(service, "보내기")
+                ?: findBestMatchingNode(service, "Send")
+                ?: findBestMatchingNode(service, "send")
+                ?: findBestMatchingNode(service, "btn_send")
+
             if (sendNode != null) {
                 val sendRect = android.graphics.Rect()
                 sendNode.getBoundsInScreen(sendRect)
                 showVirtualPointerAt(sendRect.centerX().toFloat(), sendRect.centerY().toFloat())
                 delay(150)
                 service.performClickOnNode(sendNode)
-                return ExecutionReport(true, "'$appName'에서 '$targetPerson'님께 \"$messageText\" 메시지를 전송했습니다.")
+                return@withContext ExecutionReport(true, "'$appName'에서 '$targetPerson'님께 \"$messageText\" 메시지를 전송했습니다.")
+            } else {
+                // 🛡️ 화면에 전송 버튼 텍스트가 없을 때: 소프트 키보드 우측 하단 엔터/전송 키(화면 90%, 94%) 가상 탭
+                val metrics = getScreenMetrics()
+                val enterX = metrics.first * 0.90f
+                val enterY = metrics.second * 0.94f
+                showVirtualPointerAt(enterX, enterY)
+                delay(150)
+                service.tap(enterX, enterY)
+                return@withContext ExecutionReport(true, "'$appName'에서 '$targetPerson'님께 \"$messageText\" 메시지를 전송했습니다.")
             }
-            return ExecutionReport(true, "'$appName' 입력창에 \"$messageText\" 문장을 입력했습니다.")
         }
 
-        return ExecutionReport(true, "'$appName'을 실행하여 '$targetPerson' 대상을 탐색했습니다.")
+        return@withContext ExecutionReport(true, "'$appName'을 실행하여 '$targetPerson' 대상을 탐색했습니다.")
+    }
     }
 
     /**
@@ -402,6 +456,7 @@ class AutoOperatorManager private constructor(private val context: Context) {
 
     /**
      * 화면 내에서 대상 텍스트 또는 설명과 가장 잘 일치하는 클릭 가능 노드 검색
+     * (P0 안정성: 탐색된 비매칭 노드 전수 즉시 recycle()하여 시스템 바인더 버퍼 고갈 원천 차단)
      */
     private fun findBestMatchingNode(
         service: YggdrasilAccessibilityService,
@@ -413,23 +468,37 @@ class AutoOperatorManager private constructor(private val context: Context) {
         // 1. 직접 텍스트 매칭
         val textMatches = service.findNodesByText(keyword)
         val clickable = textMatches.firstOrNull { it.isClickable }
-        if (clickable != null) return clickable
-        if (textMatches.isNotEmpty()) return textMatches.first()
+        if (clickable != null) {
+            textMatches.filter { it != clickable }.forEach { try { it.recycle() } catch (_: Exception) {} }
+            return clickable
+        }
+        if (textMatches.isNotEmpty()) {
+            val first = textMatches.first()
+            textMatches.drop(1).forEach { try { it.recycle() } catch (_: Exception) {} }
+            return first
+        }
 
-        // 2. 전체 노드 트리 재귀 탐색 (텍스트, contentDescription, 뷰 ID)
+        // 2. 전체 노드 트리 재귀 탐색 후 비매칭 노드 즉시 자원 반환
         val allNodes = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
         collectAllNodesRecursive(root, allNodes)
 
+        var matchedNode: android.view.accessibility.AccessibilityNodeInfo? = null
         for (node in allNodes) {
-            val text = node.text?.toString()?.lowercase()?.replace(" ", "") ?: ""
-            val desc = node.contentDescription?.toString()?.lowercase()?.replace(" ", "") ?: ""
-            val viewId = node.viewIdResourceName?.lowercase() ?: ""
+            if (matchedNode == null) {
+                val text = node.text?.toString()?.lowercase()?.replace(" ", "") ?: ""
+                val desc = node.contentDescription?.toString()?.lowercase()?.replace(" ", "") ?: ""
+                val viewId = node.viewIdResourceName?.lowercase() ?: ""
 
-            if (text.contains(targetLower) || desc.contains(targetLower) || viewId.contains(targetLower)) {
-                return node
+                if (text.contains(targetLower) || desc.contains(targetLower) || viewId.contains(targetLower)) {
+                    matchedNode = node
+                    continue
+                }
             }
+            try {
+                node.recycle()
+            } catch (_: Exception) {}
         }
-        return null
+        return matchedNode
     }
 
     private fun collectAllNodesRecursive(
@@ -596,15 +665,23 @@ class AutoOperatorManager private constructor(private val context: Context) {
     }
 
     private fun extractTargetAppName(cmd: String): String {
-        val keywords = listOf("켜줘", "켜", "열어줘", "열어", "실행해줘", "실행해", "틀어줘", "확인해줘", "확인", "보여줘")
-        var target = cmd
-        for (kw in keywords) {
-            if (target.contains(kw)) {
-                target = target.replace(kw, "").replace("앱", "").trim()
-                return target
-            }
+        var target = cmd.trim()
+        val removeKeywords = listOf(
+            "실행해 줘", "실행해줘", "실행해", "실행",
+            "켜 줘", "켜줘", "켜",
+            "열어 줘", "열어줘", "열어",
+            "틀어 줘", "틀어줘", "틀어",
+            "확인해 줘", "확인해줘", "확인해", "확인",
+            "보여 줘", "보여줘", "보여",
+            "들어가 줘", "들어가줘", "들어가",
+            "띄워 줘", "띄워줘", "띄워",
+            "앱", "어플"
+        )
+        for (kw in removeKeywords) {
+            target = target.replace(kw, "")
         }
-        return ""
+        target = target.replace("줘", "").replace("좀", "").trim()
+        return target
     }
 
     private fun extractClickTarget(cmd: String): String {

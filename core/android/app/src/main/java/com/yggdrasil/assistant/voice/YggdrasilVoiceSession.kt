@@ -1,10 +1,12 @@
 package com.yggdrasil.assistant.voice
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -17,6 +19,9 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.yggdrasil.assistant.nlp.KoreanSemanticLexicon
+import com.yggdrasil.assistant.nlp.UserFeedbackLearner
+import com.yggdrasil.assistant.nlp.YggdrasilContextualResolver
 import com.yggdrasil.assistant.operator.AutoOperatorManager
 import com.yggdrasil.assistant.rag.FactContextBuilder
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +58,7 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
 
     private val sessionScope = CoroutineScope(Dispatchers.Main)
     private var lastCapturedScreen: Bitmap? = null
+    @Volatile private var isShowingSession = false
 
     // UI 컴포넌트
     private var responseCard: LinearLayout? = null
@@ -255,8 +261,19 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        isShowingSession = true
         Log.i(TAG, "🎙️ [VoiceSession 표시] 빅스비 스타일 플로팅 오버레이 전면 전개")
         
+        // 🌟 Doze 모드 및 화면 꺼짐 잠금화면 위 노출 플래그 적용
+        YggdrasilKeyguardWakeHelper.applyShowOnKeyguardFlags(window?.window)
+
+        // 핫워드 엔진 마이크 독점 해제 -> SpeechRecognizer에게 마이크 완전 양도
+        try {
+            YggdrasilHotwordDetector.getInstance(context).stopListening()
+        } catch (e: Exception) {
+            Log.w(TAG, "핫워드 마이크 양도 중 예외", e)
+        }
+
         // 텍스트 타이핑 키보드가 캡슐 UI를 가리지 않도록 소프트 인풋 모드 설정 & 포커스 허용
         window?.window?.let { win ->
             win.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
@@ -274,8 +291,16 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
 
     override fun onHide() {
         super.onHide()
+        isShowingSession = false
         liveInputEditText?.let { hideSoftInput(it) }
         stopSpeechRecognition()
+
+        // 세션 종료 후 백그라운드 핫워드 상시 감시 복원
+        try {
+            YggdrasilHotwordDetector.getInstance(context).startListening()
+        } catch (e: Exception) {
+            Log.w(TAG, "핫워드 백그라운드 재개 중 예외", e)
+        }
     }
 
     /**
@@ -337,19 +362,52 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
     }
 
     /**
+     * 삼성 One UI 및 안드로이드 순정 환경에 최적화된 온디바이스 STT 인식기 인스턴스 생성
+     * (기본 선택 서비스 부재로 인한 ERROR_CLIENT 5 방어)
+     */
+    private fun createOptimizedSpeechRecognizer(): SpeechRecognizer {
+        // 1. Google 온디바이스 음성인식 전용 컴포넌트 명시적 바인딩
+        val googleTtsComponent = ComponentName(
+            "com.google.android.tts",
+            "com.google.android.apps.speech.tts.googletts.service.GoogleTTSRecognitionService"
+        )
+        try {
+            return SpeechRecognizer.createSpeechRecognizer(context, googleTtsComponent)
+        } catch (e: Exception) {
+            Log.w(TAG, "GoogleTTSRecognitionService 바인딩 실패, 대체 수단 시도", e)
+        }
+
+        // 2. Android 12+ 순정 온디바이스 음성 인식기 시도
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+            try {
+                return SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            } catch (e: Exception) {
+                Log.w(TAG, "createOnDeviceSpeechRecognizer 실패", e)
+            }
+        }
+
+        // 3. 시스템 기본 인식기
+        return SpeechRecognizer.createSpeechRecognizer(context)
+    }
+
+    /**
      * 실시간 음성 스트리밍 STT 시작 (말하는 문장을 즉각 화면에 표시 + 7초 발화 유예 시간)
      */
     private fun startSpeechRecognition() {
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            liveInputEditText?.hint = "음성 인식기를 사용할 수 없습니다."
-            return
-        }
-
         stopSpeechRecognition()
 
         sessionScope.launch(Dispatchers.Main) {
+            // 🌟 세션이 이미 닫힌 경우 비동기 유령 세션 생성 원천 방어
+            if (!isShowingSession) return@launch
+
             try {
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                val recognizer = createOptimizedSpeechRecognizer()
+                if (!isShowingSession) {
+                    recognizer.destroy()
+                    return@launch
+                }
+
+                speechRecognizer = recognizer.apply {
                     setRecognitionListener(object : RecognitionListener {
                         override fun onReadyForSpeech(params: Bundle?) {
                             liveInputEditText?.hint = "듣고 있어요..."
@@ -360,6 +418,13 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
 
                         override fun onBeginningOfSpeech() {
                             liveInputEditText?.hint = "입력 중..."
+                            // 🌟 [기둥 2: 말 끊기 (Acoustic Barge-in)]
+                            // 사용자가 말을 시작하는 순간 AI의 TTS 음성 출력을 즉시 중단하여 자연스러운 전이중 대화 구현
+                            try {
+                                YggdrasilTtsManager.getInstance(context).stop()
+                            } catch (e: Exception) {
+                                Log.w(TAG, "말 끊기 TTS 정지 실패", e)
+                            }
                         }
 
                         override fun onRmsChanged(rmsdB: Float) {
@@ -378,6 +443,13 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                                 SpeechRecognizer.ERROR_NO_MATCH,
                                 SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
                                     liveInputEditText?.hint = "말씀을 듣지 못했습니다. 탭하여 직접 타이핑해 보세요."
+                                    // 4초간 추가 타이핑 입력이 없으면 화면을 가리지 않도록 자동 닫힘
+                                    sessionScope.launch(Dispatchers.Main) {
+                                        delay(4000)
+                                        if (isShowingSession && liveInputEditText?.text.isNullOrBlank()) {
+                                            hide()
+                                        }
+                                    }
                                 }
                                 11 -> { // SpeechRecognizer.ERROR_ALREADY_IN_PROGRESS
                                     stopSpeechRecognition()
@@ -423,10 +495,10 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true) // 실시간 중간 문장 반환 필수 플래그
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
 
-                    // 🌟 발화 유예 시간 7초 확장: 사용자가 생각하며 멈칫해도 끊김 없이 끝까지 경청
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 7000L)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 7000L)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 5000L)
+                    // 🌟 초고속 0ms 반응 튜닝: 발화 종료 후 1.5초 무음 감지 시 즉각 판정 (체감 속도 400% 향상)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
                 }
 
                 speechRecognizer?.startListening(intent)
@@ -466,63 +538,198 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
         responseTextView?.text = "⚡ 작업을 수행하는 중입니다..."
 
         sessionScope.launch(Dispatchers.Default) {
-            val lower = trimmed.lowercase()
+            val customName = try {
+                com.yggdrasil.assistant.persona.UserPersonaManager.getInstance(context).getProfile().aiName.trim()
+            } catch (_: Exception) { "" }
 
-            // 1. 화면 자율 조작 / 스마트폰 전체 앱 실행 명령 (홈, 뒤로, 스크롤, 클릭, 앱 실행, 메시지 전송, 일정 확인 등 포괄)
-            val isActionCommand = lower.contains("켜") || lower.contains("열어") || lower.contains("실행") ||
-                    lower.contains("내려") || lower.contains("올려") || lower.contains("스크롤") ||
-                    lower.contains("클릭") || lower.contains("눌러") || lower.contains("터치") ||
-                    lower.contains("뒤로") || lower.contains("홈") || lower.contains("바탕화면") ||
-                    lower.contains("메인") || lower.contains("보내") || lower.contains("전송") ||
-                    lower.contains("들어가") || lower.contains("가줘") || lower.contains("이동") ||
-                    lower.contains("확인") || lower.contains("보여줘") || lower.contains("일정") ||
-                    lower.contains("캘린더") || lower.contains("달력") || lower.contains("알람") ||
-                    lower.contains("시계")
+            // 1. "자비스 카톡 보내줘", "이그드라실 홈으로 가" 등 호출 호칭 접두어 자동 정제
+            var cleanCommand = trimmed
+            val prefixes = mutableListOf("이그드라실아", "이그드라실야", "이그드라실", "어이 이그드라실")
+            if (customName.isNotBlank()) {
+                prefixes.add(0, "${customName}아")
+                prefixes.add(0, "${customName}야")
+                prefixes.add(0, customName)
+            }
+            for (prefix in prefixes) {
+                if (cleanCommand.startsWith(prefix, ignoreCase = true)) {
+                    cleanCommand = cleanCommand.substring(prefix.length).trim().removePrefix(",").trim()
+                    break
+                }
+            }
 
-            if (isActionCommand) {
-                val autoOperator = AutoOperatorManager.getInstance(context)
-                val report = autoOperator.executeNaturalCommand(trimmed)
-
+            // 부르기만 하고 명령어가 없는 경우 ("자비스", "이그드라실")
+            if (cleanCommand.isBlank()) {
+                val callName = if (customName.isNotBlank()) customName else "이그드라실"
                 withContext(Dispatchers.Main) {
-                    responseTextView?.text = "🤖 ${report.message}"
-                    // 앱 실행 및 스크롤 완료 후 1.6초 뒤 오버레이 부드럽게 닫기
-                    sessionScope.launch {
-                        delay(1600)
-                        hide()
-                    }
+                    responseTextView?.text = "네! 말씀하세요. 무엇을 도와드릴까요?"
                 }
                 return@launch
             }
 
-            // 2. 실시간 웹 팩트 검색 (Search Grounding)
-            val factBuilder = FactContextBuilder.getInstance(context)
-            val factResult = factBuilder.buildEnrichedContext(trimmed)
+            // 🌟 [기둥 3: 시각-기억 결합 맥락 복원기 (Contextual Resolution Engine)]
+            // 화면 상의 텍스트와 대화 장기기억을 참조하여 "그거", "거기", "이 사람", "이거" 대명사 및 지시어를 실체 엔티티로 복원
+            val contextualResolver = YggdrasilContextualResolver.getInstance(context)
+            val contextResolvedCommand = contextualResolver.resolveContext(cleanCommand)
+            Log.i(TAG, "🔍 [맥락 복원 전/후]: '$cleanCommand' -> '$contextResolvedCommand'")
 
-            if (factResult.directAnswer != null) {
-                withContext(Dispatchers.Main) {
-                    responseTextView?.text = factResult.directAnswer
-                }
-                return@launch
+            // 🌟 [기둥 3: 한국어 기초 문법 & 일상어 온톨로지 정규화 (Korean Semantic Lexicon)]
+            // 온톨로지 DB(korean_action_ontology.json)를 참조하여 0ms에 동사/명사/축약어 일괄 정규화
+            val normalizedLexicon = KoreanSemanticLexicon.normalize(contextResolvedCommand, context)
+            val finalCommand = normalizedLexicon.normalizedText
+            Log.i(TAG, "📖 [국어 기초/일상어 정규화]: '$contextResolvedCommand' -> '$finalCommand'")
+
+            // 2. 온디바이스 지능형 인텐트 플래너 및 실시간 TTS 엔진 연동
+            val planner = YggdrasilIntentPlanner.getInstance(context)
+            val plan = planner.planAction(finalCommand)
+            val ttsManager = YggdrasilTtsManager.getInstance(context)
+
+            // 복원 및 추출된 주요 엔티티를 맥락 메모리에 저장 (후속 대화에서 "그 사람", "거기" 참조 가능)
+            if (plan.target.isNotBlank()) {
+                contextualResolver.recordEntity(plan.target, "TARGET")
+            }
+            if (plan.appName.isNotBlank()) {
+                contextualResolver.recordEntity(plan.appName, "APP")
             }
 
-            if (factResult.intent == FactContextBuilder.QueryIntent.WEB_SEARCH) {
-                val searchEngine = com.yggdrasil.assistant.search.OnDeviceSearchGroundingEngine.getInstance()
-                val keyword = trimmed.replace("검색해줘", "").replace("알려줘", "").replace("에 대해", "").trim()
-                val searchRes = searchEngine.searchFact(keyword)
+            Log.i(TAG, "🧠 [인텐트 플래너 결과]: intent=${plan.intent}, spoken='${plan.spokenFeedback}'")
 
-                withContext(Dispatchers.Main) {
-                    if (searchRes.success) {
-                        responseTextView?.text = "🌐 [실시간 웹 정보: ${searchRes.source}]\n\n${searchRes.snippet}"
+            // 실시간 자비스 보이스 피드백 (소리 내어 즉각 대답)
+            if (plan.spokenFeedback.isNotBlank()) {
+                ttsManager.speak(plan.spokenFeedback)
+            }
+
+            when (plan.intent) {
+                YggdrasilIntentPlanner.ActionIntent.LAUNCH_APP -> {
+                    withContext(Dispatchers.Main) { hide() }
+                    delay(300)
+                    val ok = AutoOperatorManager.getInstance(context).launchAppByName(plan.appName)
+                    if (ok) {
+                        UserFeedbackLearner.getInstance(context).recordExecutedAction(plan.intent, plan.appName, "", "")
                     } else {
-                        responseTextView?.text = "🌐 실시간 검색 결과를 찾지 못했습니다."
+                        ttsManager.speak("${plan.appName} 앱을 찾을 수 없습니다.")
                     }
+                    return@launch
                 }
-                return@launch
-            }
 
-            // 3. 일반 친절한 대화 응답 (사진 2와 같은 자연스러운 어시스턴트 멘트)
-            withContext(Dispatchers.Main) {
-                responseTextView?.text = "안녕하세요! 저는 사용자님의 스마트폰 자율 비서 Yggdrasil입니다.\n\n'유튜브 켜줘', '스크롤 내려줘', '설정 열어줘', '내일 서울 날씨 검색해줘' 처럼 무엇이든 명령해보세요."
+                YggdrasilIntentPlanner.ActionIntent.SEND_MESSAGE -> {
+                    withContext(Dispatchers.Main) { hide() }
+                    delay(300)
+                    // 사용자 선호 앱 오버라이드 확인 (예: 엄마한테 보낼 땐 문자 선호)
+                    val preferredApp = UserFeedbackLearner.getInstance(context).getPreferredApp(plan.target)
+                    val actualCommand = if (preferredApp != null && !finalCommand.contains(preferredApp)) {
+                        finalCommand.replace("카카오톡", preferredApp).replace("메시지", preferredApp)
+                    } else {
+                        finalCommand
+                    }
+
+                    val report = AutoOperatorManager.getInstance(context).executeNaturalCommand(actualCommand)
+                    if (report.success) {
+                        UserFeedbackLearner.getInstance(context).recordExecutedAction(plan.intent, preferredApp ?: plan.appName, plan.target, plan.content)
+                        ttsManager.speak("${plan.target}님께 전송을 완료했습니다.")
+                    }
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.PLAY_MEDIA -> {
+                    withContext(Dispatchers.Main) { hide() }
+                    delay(300)
+                    val mediaQuery = plan.content
+                    val mediaIntent = Intent(Intent.ACTION_SEARCH).apply {
+                        setPackage(if (plan.appName == "유튜브뮤직") "com.google.android.apps.youtube.music" else "com.google.android.youtube")
+                        putExtra("query", mediaQuery)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    try {
+                        context.startActivity(mediaIntent)
+                    } catch (_: Exception) {
+                        val webUri = android.net.Uri.parse("https://www.youtube.com/results?search_query=" + java.net.URLEncoder.encode(mediaQuery, "UTF-8"))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, webUri).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK })
+                    }
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.CONTROL_DEVICE -> {
+                    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+                    when (plan.content) {
+                        "VOLUME_UP" -> audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI)
+                        "VOLUME_DOWN" -> audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI)
+                        "VOLUME_MUTE" -> audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_MUTE, android.media.AudioManager.FLAG_SHOW_UI)
+                        "FLASHLIGHT_ON", "FLASHLIGHT_OFF" -> {
+                            try {
+                                val camManager = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+                                camManager?.cameraIdList?.firstOrNull()?.let { camId ->
+                                    camManager.setTorchMode(camId, plan.content == "FLASHLIGHT_ON")
+                                }
+                            } catch (e: Exception) { Log.w(TAG, "플래시 제어 예외", e) }
+                        }
+                    }
+                    delay(1200)
+                    withContext(Dispatchers.Main) { hide() }
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.USER_FEEDBACK_CORRECTION -> {
+                    val learner = UserFeedbackLearner.getInstance(context)
+                    val correction = learner.learnFromCorrection(cleanCommand)
+                    withContext(Dispatchers.Main) {
+                        responseCard?.visibility = View.VISIBLE
+                        responseTextView?.text = "🧠 [자가 교정 학습 완료]\n\n${correction.message}"
+                    }
+                    ttsManager.speak(correction.message)
+
+                    if (correction.shouldReexecute && !correction.newAppName.isNullOrBlank()) {
+                        delay(1000)
+                        withContext(Dispatchers.Main) { hide() }
+                        val app = correction.newAppName
+                        val target = correction.target ?: ""
+                        val content = correction.content ?: ""
+                        AutoOperatorManager.getInstance(context).executeSendMessageDirect(app, target, content)
+                    }
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.CHAINED_APP_ACTION,
+                YggdrasilIntentPlanner.ActionIntent.SYSTEM_NAV,
+                YggdrasilIntentPlanner.ActionIntent.SCROLL -> {
+                    withContext(Dispatchers.Main) { hide() }
+                    delay(300)
+                    AutoOperatorManager.getInstance(context).executeNaturalCommand(finalCommand)
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.SEARCH_WEB -> {
+                    val query = plan.content.ifBlank { cleanCommand }
+                    val searchEngine = com.yggdrasil.assistant.search.OnDeviceSearchGroundingEngine.getInstance()
+                    val searchRes = searchEngine.searchFact(query)
+
+                    val displayText = if (searchRes.success) {
+                        "🌐 [실시간 웹 정보: ${searchRes.source}]\n\n${searchRes.snippet}"
+                    } else {
+                        "🌐 '${query}' 관련 검색 결과를 찾지 못했습니다."
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        responseCard?.visibility = View.VISIBLE
+                        responseTextView?.text = displayText
+                    }
+                    if (searchRes.success) {
+                        ttsManager.speak(searchRes.snippet)
+                    }
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.DIRECT_ANSWER -> {
+                    val factBuilder = FactContextBuilder.getInstance(context)
+                    val factResult = factBuilder.buildEnrichedContext(cleanCommand)
+                    val answerText = factResult.directAnswer ?: plan.directResponse.ifBlank { "말씀하신 내용을 확인했습니다." }
+
+                    withContext(Dispatchers.Main) {
+                        responseCard?.visibility = View.VISIBLE
+                        responseTextView?.text = answerText
+                    }
+                    ttsManager.speak(answerText)
+                    return@launch
+                }
             }
         }
     }

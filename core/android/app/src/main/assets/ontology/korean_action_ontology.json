@@ -1,0 +1,264 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-10-18",
+  "verbs": [
+    {
+      "action": "LAUNCH",
+      "canonical": "켜다",
+      "stems": ["켜", "열", "실행", "띄워", "들어가", "시작", "구동", "기동", "보여줘", "오픈", "런칭", "틀어", "가동", "보여"]
+    },
+    {
+      "action": "CLOSE",
+      "canonical": "끄다",
+      "stems": ["꺼", "닫", "종료", "치워", "정지", "멈춰", "나가", "그만", "중단", "안볼래", "킬", "오프", "죽여", "꺼버려"]
+    },
+    {
+      "action": "SEND",
+      "canonical": "보내다",
+      "stems": ["보내", "남겨", "전송", "날려", "써줘", "말해줘", "답장", "톡해", "부쳐", "쏘아", "전해", "올려", "작성"]
+    },
+    {
+      "action": "SEARCH",
+      "canonical": "찾다",
+      "stems": ["찾아", "검색", "알려줘", "어디", "얼마", "어때", "조사", "서치", "물어봐", "뒤져", "확인", "몇시", "누구", "뜻"]
+    },
+    {
+      "action": "PLAY",
+      "canonical": "재생하다",
+      "stems": ["틀어", "재생", "들려줘", "듣고", "플레이", "감상", "스트리밍", "불러와"]
+    },
+    {
+      "action": "NAVIGATE",
+      "canonical": "안내하다",
+      "stems": ["가자", "안내해", "데려다줘", "길안내", "출발", "어떻게가", "찍어줘", "경로", "찾아가자"]
+    },
+    {
+      "action": "CONTROL_DEVICE",
+      "canonical": "제어하다",
+      "stems": ["올려", "내려", "키워", "줄여", "높여", "낮춰", "밝게", "어둡게", "진동", "무음", "소리", "회전", "고정"]
+    },
+    {
+      "action": "SCHEDULE",
+      "canonical": "일정관리하다",
+      "stems": ["맞춰", "깨워", "등록", "추가", "적어", "기억해", "알려줘", "예약", "울려", "메모", "기록"]
+    }
+  ],
+  "entities": [
+    {
+      "canonicalApp": "카카오톡",
+      "category": "COMMUNICATION",
+      "aliases": ["카톡", "톡", "까톡", "카카오", "kakao", "kakaotalk"]
+    },
+    {
+      "canonicalApp": "메시지",
+      "category": "COMMUNICATION",
+      "aliases": ["문자", "문자메시지", "문자방", "sms", "mms"]
+    },
+    {
+      "canonicalApp": "페이스북메신저",
+      "category": "COMMUNICATION",
+      "aliases": ["페메", "메신저", "페이스북", "페북메시지"]
+    },
+    {
+      "canonicalApp": "인스타그램",
+      "category": "COMMUNICATION",
+      "aliases": ["인스타", "디엠", "dm", "인스타디엠", "인스타피드"]
+    },
+    {
+      "canonicalApp": "텔레그램",
+      "category": "COMMUNICATION",
+      "aliases": ["텔레", "텔그", "telegram"]
+    },
+    {
+      "canonicalApp": "디스코드",
+      "category": "COMMUNICATION",
+      "aliases": ["디코", "discord"]
+    },
+    {
+      "canonicalApp": "라인",
+      "category": "COMMUNICATION",
+      "aliases": ["line", "네이버라인"]
+    },
+    {
+      "canonicalApp": "유튜브",
+      "category": "MEDIA",
+      "aliases": ["유튭", "튜브", "youtube", "동영상", "영상"]
+    },
+    {
+      "canonicalApp": "유튜브뮤직",
+      "category": "MEDIA",
+      "aliases": ["유튜브음악", "유뮤", "뮤직", "노래", "음악", "음원", "ytmusic"]
+    },
+    {
+      "canonicalApp": "멜론",
+      "category": "MEDIA",
+      "aliases": ["melon", "멜론차트", "멜론음악"]
+    },
+    {
+      "canonicalApp": "스포티파이",
+      "category": "MEDIA",
+      "aliases": ["스포티", "spotify"]
+    },
+    {
+      "canonicalApp": "갤러리",
+      "category": "MEDIA",
+      "aliases": ["사진", "짤", "앨범", "캡처", "스크린샷", "스샷", "사진첩", "동영상목록"]
+    },
+    {
+      "canonicalApp": "카메라",
+      "category": "MEDIA",
+      "aliases": ["캠", "사진찍기", "동영상촬영", "촬영"]
+    },
+    {
+      "canonicalApp": "넷플릭스",
+      "category": "MEDIA",
+      "aliases": ["넷플", "netflix", "드라마", "영화"]
+    },
+    {
+      "canonicalApp": "티빙",
+      "category": "MEDIA",
+      "aliases": ["tving"]
+    },
+    {
+      "canonicalApp": "쿠팡플레이",
+      "category": "MEDIA",
+      "aliases": ["쿠플"]
+    },
+    {
+      "canonicalApp": "디즈니플러스",
+      "category": "MEDIA",
+      "aliases": ["디플", "디즈니"]
+    },
+    {
+      "canonicalApp": "카카오T",
+      "category": "TRANSPORT",
+      "aliases": ["카택", "택시", "카카오택시", "콜", "택시호출", "대리", "바이크"]
+    },
+    {
+      "canonicalApp": "네이버지도",
+      "category": "TRANSPORT",
+      "aliases": ["지도", "네비", "네비게이션", "길", "길찾기", "네이버지도앱"]
+    },
+    {
+      "canonicalApp": "티맵",
+      "category": "TRANSPORT",
+      "aliases": ["tmap", "티맵네비"]
+    },
+    {
+      "canonicalApp": "카카오내비",
+      "category": "TRANSPORT",
+      "aliases": ["김기사", "카내비"]
+    },
+    {
+      "canonicalApp": "카카오지하철",
+      "category": "TRANSPORT",
+      "aliases": ["지하철", "전철", "지하철노선도", "막차"]
+    },
+    {
+      "canonicalApp": "카카오버스",
+      "category": "TRANSPORT",
+      "aliases": ["버스", "버스정류장", "버스도착", "시내버스"]
+    },
+    {
+      "canonicalApp": "배달의민족",
+      "category": "LIFESTYLE",
+      "aliases": ["배민", "배달", "야식", "치킨주문"]
+    },
+    {
+      "canonicalApp": "요기요",
+      "category": "LIFESTYLE",
+      "aliases": ["yogiyo"]
+    },
+    {
+      "canonicalApp": "당근",
+      "category": "LIFESTYLE",
+      "aliases": ["당근마켓", "중고", "중고거래"]
+    },
+    {
+      "canonicalApp": "쿠팡",
+      "category": "LIFESTYLE",
+      "aliases": ["로켓배송", "coupang", "쇼핑"]
+    },
+    {
+      "canonicalApp": "계산기",
+      "category": "TOOL",
+      "aliases": ["암산", "계산", "더하기", "빼기", "나누기"]
+    },
+    {
+      "canonicalApp": "시계",
+      "category": "TOOL",
+      "aliases": ["알람", "타이머", "스톱워치", "모닝콜"]
+    },
+    {
+      "canonicalApp": "삼성노트",
+      "category": "TOOL",
+      "aliases": ["메모", "노트", "기록장", "필기"]
+    },
+    {
+      "canonicalApp": "캘린더",
+      "category": "TOOL",
+      "aliases": ["달력", "일정", "스케줄"]
+    },
+    {
+      "canonicalApp": "날씨",
+      "category": "TOOL",
+      "aliases": ["기상", "일기예보", "비오나", "기온", "미세먼지"]
+    },
+    {
+      "canonicalApp": "설정",
+      "category": "SYSTEM",
+      "aliases": ["환경설정", "세팅", "설정창"]
+    },
+    {
+      "canonicalApp": "내파일",
+      "category": "SYSTEM",
+      "aliases": ["파일", "다운로드", "내파일폴더", "탐색기"]
+    },
+    {
+      "canonicalApp": "크롬",
+      "category": "SYSTEM",
+      "aliases": ["웹", "인터넷", "브라우저", "사파리", "chrome"]
+    },
+    {
+      "canonicalApp": "전화",
+      "category": "PHONE",
+      "aliases": ["통화", "전화걸기", "콜", "다이얼"]
+    },
+    {
+      "canonicalApp": "연락처",
+      "category": "PHONE",
+      "aliases": ["주소록", "전화번호부", "전화번호"]
+    }
+  ],
+  "pronouns": [
+    { "term": "그거", "targetCategory": "MEDIA" },
+    { "term": "이거", "targetCategory": "MEDIA" },
+    { "term": "저거", "targetCategory": "MEDIA" },
+    { "term": "그것", "targetCategory": "MEDIA" },
+    { "term": "이것", "targetCategory": "MEDIA" },
+    { "term": "방금 그거", "targetCategory": "MEDIA" },
+    { "term": "아까 그거", "targetCategory": "MEDIA" },
+    { "term": "그 앱", "targetCategory": "APPLICATION" },
+    { "term": "거기", "targetCategory": "LOCATION" },
+    { "term": "여기", "targetCategory": "LOCATION" },
+    { "term": "저기", "targetCategory": "LOCATION" },
+    { "term": "이 사람", "targetCategory": "PERSON" },
+    { "term": "그 사람", "targetCategory": "PERSON" },
+    { "term": "이분", "targetCategory": "PERSON" },
+    { "term": "그분", "targetCategory": "PERSON" },
+    { "term": "걔", "targetCategory": "PERSON" }
+  ],
+  "deviceControls": [
+    { "feature": "VOLUME_UP", "triggers": ["볼륨 올려", "소리 키워", "소리 높여", "볼륨 업"] },
+    { "feature": "VOLUME_DOWN", "triggers": ["볼륨 내려", "소리 줄여", "소리 낮춰", "볼륨 다운"] },
+    { "feature": "VOLUME_MUTE", "triggers": ["음소거", "소리 꺼", "조용히 해", "무음"] },
+    { "feature": "BRIGHTNESS_UP", "triggers": ["화면 밝게", "화면 올려", "밝기 키워"] },
+    { "feature": "BRIGHTNESS_DOWN", "triggers": ["화면 어둡게", "화면 내려", "밝기 줄여"] },
+    { "feature": "FLASHLIGHT_ON", "triggers": ["손전등 켜", "플래시 켜", "불 켜줘"] },
+    { "feature": "FLASHLIGHT_OFF", "triggers": ["손전등 꺼", "플래시 꺼", "불 꺼줘"] },
+    { "feature": "WIFI_ON", "triggers": ["와이파이 켜", "wifi 켜"] },
+    { "feature": "WIFI_OFF", "triggers": ["와이파이 꺼", "wifi 꺼"] },
+    { "feature": "BLUETOOTH_ON", "triggers": ["블루투스 켜"] },
+    { "feature": "BLUETOOTH_OFF", "triggers": ["블루투스 꺼"] }
+  ]
+}

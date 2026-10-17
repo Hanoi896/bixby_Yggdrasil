@@ -120,19 +120,22 @@ class FactContextBuilder private constructor(private val context: Context) {
             }
 
             QueryIntent.MEMORY_SEARCH -> {
-                val ragManager = MuninRagManager(context)
-                val memories = ragManager.retrieveRelevantContext(query, limit = 5)
-                val memoryFact = if (memories.isEmpty()) {
-                    "저장된 암호화 기억 검색 결과 없음 (검색어: $query)"
+                val ragManager = MuninRagManager.getInstance(context)
+                val memories = ragManager.retrieveRelevantContext(query, limit = 3)
+                val direct = if (memories.isEmpty()) {
+                    "기억 저장소에서 관련 정보를 찾지 못했습니다."
                 } else {
-                    memories.joinToString("\n") { mem -> "• [카테고리: ${mem.category}] ${mem.content}" }
+                    val topMem = memories.first()
+                    "기억하신 내용입니다: ${topMem.content}"
                 }
 
+                val memoryFact = memories.joinToString("\n") { mem -> "• [${mem.category}] ${mem.content}" }
                 val systemPrompt = buildStrictGuardrailPrompt("검색된 사용자의 암호화 기억:\n$memoryFact")
                 FactInjectionResult(
                     intent = intent,
                     systemPrompt = systemPrompt,
-                    enrichedUserPrompt = "사용자 질문: $userQuery\n\n위 검색된 기억에 기반하여 사실만을 명확하게 1~2줄로 답변하십시오. 없는 내용은 없다고 명시하십시오."
+                    enrichedUserPrompt = "사용자 질문: $userQuery\n\n위 검색된 기억에 기반하여 사실만을 명확하게 1~2줄로 답변하십시오.",
+                    directAnswer = direct
                 )
             }
 
@@ -155,7 +158,8 @@ class FactContextBuilder private constructor(private val context: Context) {
                 FactInjectionResult(
                     intent = intent,
                     systemPrompt = systemPrompt,
-                    enrichedUserPrompt = "질문: $userQuery\n\n위 외부 팩트에 근거해 사실만을 간결하게 답하십시오."
+                    enrichedUserPrompt = "질문: $userQuery\n\n위 외부 팩트에 근거해 사실만을 간결하게 답하십시오.",
+                    directAnswer = if (searchResult.success) searchResult.snippet else null
                 )
             }
 
@@ -163,7 +167,8 @@ class FactContextBuilder private constructor(private val context: Context) {
                 FactInjectionResult(
                     intent = intent,
                     systemPrompt = "당신은 갤럭시 S26 울트라 온디바이스 오퍼레이터입니다. 기기 제어 요청에 대해 어떤 작업을 수행할지 명확하게 1줄로 보고하십시오.",
-                    enrichedUserPrompt = userQuery
+                    enrichedUserPrompt = userQuery,
+                    directAnswer = "기기 제어 작업을 처리했습니다."
                 )
             }
 

@@ -122,9 +122,22 @@ Java_com_yggdrasil_assistant_llm_LocalLlmService_generateTextNative(
         {"user", prompt}
     };
 
-    std::string response = g_runtime->generateStream(messages, nullptr);
+    std::string response;
+    try {
+        response = g_runtime->generateStream(messages, nullptr);
+    } catch (const std::exception &e) {
+        LOGE("generateTextNative C++ 예외 발생: %s", e.what());
+        env->ReleaseStringUTFChars(prompt_, prompt);
+        return env->NewStringUTF("Error: Native text inference failed");
+    }
 
     env->ReleaseStringUTFChars(prompt_, prompt);
+
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("generateTextNative JNI 경계 예외 감지 -> ExceptionClear() 호출로 네이티브 크래시 차단");
+    }
+
     return env->NewStringUTF(response.c_str());
 }
 
@@ -242,9 +255,21 @@ static jfloatArray computeEmbeddingInternal(JNIEnv *env, jstring text_) {
         return nullptr;
     }
 
-    std::vector<float> emb = g_runtime->computeEmbedding(textStr);
+    std::vector<float> emb;
+    try {
+        emb = g_runtime->computeEmbedding(textStr);
+    } catch (const std::exception &e) {
+        LOGE("computeEmbeddingInternal C++ 예외 발생: %s", e.what());
+        return nullptr;
+    }
+
     if (emb.empty()) {
         return nullptr;
+    }
+
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("computeEmbeddingInternal JNI 경계 예외 감지 -> ExceptionClear() 호출로 네이티브 크래시 차단");
     }
 
     jfloatArray result = env->NewFloatArray(static_cast<jsize>(emb.size()));

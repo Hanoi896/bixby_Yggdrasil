@@ -23,11 +23,12 @@ export default function executeGungnirAction(input) {
   const policy = findPolicy(actionType);
   const requestedLevel = toInt(input.requestedLevel, MIN_PERMISSION_LEVEL, MAX_PERMISSION_LEVEL, policy.requiredLevel);
 
-  // 100% 온디바이스 Native 대화창 직결 URI 생성
-  const actionUri = 'yggdrasil://chat?query=' + encodeURIComponent(`[궁니르 액션] ${actionType} (보안 L${requestedLevel})`);
-
-  // L4 이상 고위험 작업: 오딘 승인 필요
+  // L4 이상 고위험 작업: 오딘 승인 필요 (L4 이상은 챗/승인 UI로 안내, L1~L3는 네이티브 액션 직결)
   const requiresApproval = requestedLevel >= 4;
+  const actionUri = requiresApproval
+    ? buildChatUri(`[🛡️ Odin 승인 대기] ${actionType} (보안 L${requestedLevel})`)
+    : buildActionUri(actionType, actionType);
+
   const executionMessage = requiresApproval
     ? `[🛡️ Odin 승인 대기] '${actionType}' 작업은 보안 ${requestedLevel}등급(보안 도메인: ${policy.realm}) 작업으로, 기기에서 생체 인증 확인 후 실행됩니다.`
     : `[⚡ 즉시 실행] '${actionType}' 작업을 온디바이스 네이티브 엔진으로 즉시 전달하여 실행합니다.`;

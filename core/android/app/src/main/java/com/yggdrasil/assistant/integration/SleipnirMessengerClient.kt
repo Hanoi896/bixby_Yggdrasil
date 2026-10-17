@@ -234,7 +234,7 @@ class SleipnirMessengerClient(private val context: Context) {
     }
 
     /**
-     * 2. 카카오톡 인텐트 연동
+     * 2. 카카오톡 인텐트 연동 (FileProvider 안전 가드레일 적용)
      */
     private fun sendKakaoTalk(textMessage: String?, attachmentFilePath: String?): SendResult {
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -242,9 +242,11 @@ class SleipnirMessengerClient(private val context: Context) {
             setPackage("com.kakao.talk")
             putExtra(Intent.EXTRA_TEXT, textMessage ?: "")
             if (attachmentFilePath != null) {
-                putExtra(Intent.EXTRA_STREAM, Uri.fromFile(File(attachmentFilePath)))
+                val file = File(attachmentFilePath)
+                putExtra(Intent.EXTRA_STREAM, getSharableUri(file))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
 
         return try {
@@ -269,21 +271,35 @@ class SleipnirMessengerClient(private val context: Context) {
     }
 
     /**
-     * 4. 시스템 표준 공유 인텐트
+     * 4. 시스템 표준 공유 인텐트 (FileProvider 안전 가드레일 적용)
      */
     private fun sendSystemShareIntent(textMessage: String?, attachmentFilePath: String?): SendResult {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = if (attachmentFilePath != null) "*/*" else "text/plain"
             putExtra(Intent.EXTRA_TEXT, textMessage ?: "")
             if (attachmentFilePath != null) {
-                putExtra(Intent.EXTRA_STREAM, Uri.fromFile(File(attachmentFilePath)))
+                val file = File(attachmentFilePath)
+                putExtra(Intent.EXTRA_STREAM, getSharableUri(file))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
         val chooser = Intent.createChooser(intent, "공유할 앱 선택").apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
         context.startActivity(chooser)
         return SendResult(true, "system_share", null, "시스템 공유 창 호출 완료")
+    }
+
+    private fun getSharableUri(file: File): Uri {
+        return try {
+            androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+        } catch (e: Exception) {
+            Uri.fromFile(file)
+        }
     }
 }

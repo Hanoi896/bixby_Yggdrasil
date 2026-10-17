@@ -12,8 +12,19 @@ import android.content.Context
  */
 class MuninRagManager(context: Context) {
 
+    companion object {
+        @Volatile
+        private var instance: MuninRagManager? = null
+
+        fun getInstance(context: Context): MuninRagManager {
+            return instance ?: synchronized(this) {
+                instance ?: MuninRagManager(context.applicationContext).also { instance = it }
+            }
+        }
+    }
+
     private val embeddingEngine = MuninEmbeddingEngine()
-    private val database = MuninSqlCipherDatabase(context, embeddingEngine)
+    private val database = MuninSqlCipherDatabase(context.applicationContext, embeddingEngine)
 
     // 자체 개선(Self-Improvement)을 위한 사용자 선호도 및 성공 지표 캐시
     private var autonomousFeedbackScore: Float = 1.0f
@@ -119,4 +130,25 @@ class MuninRagManager(context: Context) {
      * 현재 보관 중인 총 기억 수
      */
     fun getTotalMemoryCount(): Int = database.getMemoryCount().toInt()
+
+    /**
+     * 최근 대화 기록 조회 (인앱 챗룸 복원용)
+     */
+    fun loadRecentDialogues(limit: Int = 30): List<MuninSqlCipherDatabase.MemoryRecord> {
+        return database.loadRecentDialogues(limit)
+    }
+
+    /**
+     * 스마트 알림 영속화
+     */
+    fun insertNotification(noti: MuninSqlCipherDatabase.DbNotification): Long {
+        return database.insertNotification(noti)
+    }
+
+    /**
+     * 최근 스마트 알림 목록 조회
+     */
+    fun loadRecentNotifications(limit: Int = 100): List<MuninSqlCipherDatabase.DbNotification> {
+        return database.loadRecentNotifications(limit)
+    }
 }

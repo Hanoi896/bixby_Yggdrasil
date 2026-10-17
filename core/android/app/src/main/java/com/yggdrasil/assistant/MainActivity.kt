@@ -119,40 +119,85 @@ class MainActivity : ComponentActivity() {
                 },
                 onSendMessageToNpu = { userQuery ->
                     val query = userQuery.trim()
-                    // 1. [과제 22 실전 구현] 팩트 컨텍스트 주입 & 2.4B sLLM 환각 방지 파이프라인
-                    val factBuilder = com.yggdrasil.assistant.rag.FactContextBuilder.getInstance(this@MainActivity)
-                    val factResult = factBuilder.buildEnrichedContext(query)
+                    val planner = com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.getInstance(this@MainActivity)
+                    val plan = planner.planAction(query)
 
-                    // 100% 팩트 데이터 직결 반환이 가능한 경우 (일정, 세계수 성장, 판테온 상태 등)
-                    if (factResult.directAnswer != null) {
-                        factResult.directAnswer
-                    }
-                    // 2. 텔레그램 메신저 전송/테스트 질의 처리 - Dispatchers.IO에서 네트워크 소켓 I/O (NetworkOnMainThreadException 원천 차단)
-                    else if (query.contains("텔레그램") && (query.contains("테스트") || query.contains("전송") || query.contains("보내"))) {
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            val messengerClient = SleipnirMessengerClient.getInstance(this@MainActivity)
-                            val res = messengerClient.testTelegramConnection()
-                            if (res.success) {
-                                "✈️ [텔레그램 전송 성공]\n등록된 Telegram Bot API를 통해 테스트 메시지를 성공적으로 발송했습니다."
+                    when (plan.intent) {
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.LAUNCH_APP,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.SEND_MESSAGE,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.PLAY_MEDIA,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.CONTROL_DEVICE,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.CHAINED_APP_ACTION,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.SYSTEM_NAV,
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.SCROLL -> {
+                            val operator = com.yggdrasil.assistant.operator.AutoOperatorManager.getInstance(this@MainActivity)
+                            val report = operator.executeNaturalCommand(query)
+                            speakFeedback(report.message)
+                            "🤖 [자율 조작 집행 완료]\n\n${report.message}"
+                        }
+
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.USER_FEEDBACK_CORRECTION -> {
+                            val learner = com.yggdrasil.assistant.nlp.UserFeedbackLearner.getInstance(this@MainActivity)
+                            val correction = learner.learnFromCorrection(query)
+                            speakFeedback(correction.message)
+                            if (correction.shouldReexecute && !correction.newAppName.isNullOrBlank()) {
+                                val op = com.yggdrasil.assistant.operator.AutoOperatorManager.getInstance(this@MainActivity)
+                                op.executeSendMessageDirect(correction.newAppName, correction.target ?: "", correction.content ?: "")
+                            }
+                            "🧠 [자가 교정 학습 완료]\n\n${correction.message}"
+                        }
+
+                        com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.ActionIntent.SEARCH_WEB -> {
+                            val searchEngine = com.yggdrasil.assistant.search.OnDeviceSearchGroundingEngine.getInstance()
+                            val searchRes = searchEngine.searchFact(query)
+                            if (searchRes.success) {
+                                speakFeedback(searchRes.snippet)
+                                "🌐 [실시간 웹 정보: ${searchRes.source}]\n\n${searchRes.snippet}"
                             } else {
-                                "🚨 [텔레그램 전송 실패]\n사유: ${res.detailMessage}\n[설정] 탭의 [텔레그램 봇 메신저 연동]에서 Token과 Chat ID를 확인해주세요."
+                                "🌐 '${query}' 관련 검색 결과를 찾지 못했습니다."
                             }
                         }
-                    }
-                    // 3. 온디바이스 NPU 추론 (팩트 주입 + 환각 방지 절대 가드레일 강제) - Dispatchers.Default (Zero-ANR)
-                    else {
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                            val model = modelSyncManager.getActiveModelFile()
-                            val svc = llmService
-                            if (model == null || !model.exists()) {
-                                "⚠️ 온디바이스 EXAONE 모델이 아직 탑재되지 않았습니다.\n상단 [설정] 탭의 [온디바이스 AI 모델]에서 .gguf 파일을 가져와주세요."
-                            } else if (svc != null) {
-                                if (!svc.isRunning()) {
-                                    svc.startLocalDaemon(model.absolutePath)
+
+                        else -> {
+                            // 1. [과제 22 실전 구현] 팩트 컨텍스트 주입 & 2.4B sLLM 환각 방지 파이프라인
+                            val factBuilder = com.yggdrasil.assistant.rag.FactContextBuilder.getInstance(this@MainActivity)
+                            val factResult = factBuilder.buildEnrichedContext(query)
+
+                            // 100% 팩트 데이터 직결 반환이 가능한 경우 (일정, 세계수 성장, 판테온 상태 등)
+                            if (factResult.directAnswer != null) {
+                                speakFeedback(factResult.directAnswer)
+                                factResult.directAnswer
+                            }
+                            // 2. 텔레그램 메신저 전송/테스트 질의 처리
+                            else if (query.contains("텔레그램") && (query.contains("테스트") || query.contains("전송") || query.contains("보내"))) {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    val messengerClient = SleipnirMessengerClient.getInstance(this@MainActivity)
+                                    val res = messengerClient.testTelegramConnection()
+                                    if (res.success) {
+                                        "✈️ [텔레그램 전송 성공]\n등록된 Telegram Bot API를 통해 테스트 메시지를 성공적으로 발송했습니다."
+                                    } else {
+                                        "🚨 [텔레그램 전송 실패]\n사유: ${res.detailMessage}\n[설정] 탭의 [텔레그램 봇 메신저 연동]에서 Token과 Chat ID를 확인해주세요."
+                                    }
                                 }
-                                svc.generateWithPersona(factResult.systemPrompt, factResult.enrichedUserPrompt)
-                            } else {
-                                "온디바이스 NPU 추론 엔진을 준비 중입니다. 잠시 후 다시 시도해 주세요."
+                            }
+                            // 3. 온디바이스 NPU 추론 (팩트 주입 + 환각 방지 절대 가드레일 강제) - Dispatchers.Default (Zero-ANR)
+                            else {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                    val model = modelSyncManager.getActiveModelFile()
+                                    val svc = llmService
+                                    if (model == null || !model.exists()) {
+                                        "⚠️ 온디바이스 EXAONE 모델이 아직 탑재되지 않았습니다.\n상단 [설정] 탭의 [온디바이스 AI 모델]에서 .gguf 파일을 가져와주세요."
+                                    } else if (svc != null) {
+                                        if (!svc.isRunning()) {
+                                            svc.startLocalDaemon(model.absolutePath)
+                                        }
+                                        val reply = svc.generateWithPersona(factResult.systemPrompt, factResult.enrichedUserPrompt)
+                                        speakFeedback(reply)
+                                        reply
+                                    } else {
+                                        "온디바이스 NPU 추론 엔진을 준비 중입니다. 잠시 후 다시 시도해 주세요."
+                                    }
+                                }
                             }
                         }
                     }
@@ -226,10 +271,16 @@ class MainActivity : ComponentActivity() {
                 "action" -> {
                     pendingTargetTab.value = 0
                     val actionName = uri.getQueryParameter("name") ?: uri.getQueryParameter("type") ?: "execute"
-                    val payload = uri.getQueryParameter("payload") ?: ""
+                    val payload = uri.getQueryParameter("payload") ?: uri.getQueryParameter("command") ?: ""
                     android.util.Log.i("MainActivity", "빅스비 Native Action 수신: $actionName, payload: $payload")
-                    pendingDeepLinkQuery.value = "[액션 실행] $actionName: $payload"
+                    val fullCommand = if (payload.isNotBlank()) "$actionName $payload" else actionName
+                    pendingDeepLinkQuery.value = fullCommand
                     speakFeedback("$actionName 작업을 시작합니다.")
+                    lifecycleScope.launch(Dispatchers.Default) {
+                        val operator = com.yggdrasil.assistant.operator.AutoOperatorManager.getInstance(this@MainActivity)
+                        val report = operator.executeNaturalCommand(fullCommand)
+                        speakFeedback(report.message)
+                    }
                 }
                 "chat" -> {
                     pendingTargetTab.value = 0

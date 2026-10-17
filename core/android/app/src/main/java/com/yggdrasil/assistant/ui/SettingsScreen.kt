@@ -267,8 +267,9 @@ fun SettingsScreen(
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
+                    val displayCallName = if (aiName.isNotBlank()) aiName else "이그드라실"
                     Text(
-                        text = "사용자 고유의 성대 음역대(F0 피치)와 13차원 음색(MFCC)을 학습하여, 다른 사람이 '이그드라실'을 불렀을 때 반응하지 않도록 완벽히 차단합니다.",
+                        text = "사용자 고유의 성대 음역대(F0 피치)와 24차원 성도 동특성을 10문장으로 정밀 학습하여, 말투·억양까지 Munin 암호화 영구 기억소에 안전하게 각인합니다.",
                         color = Color(0xFF777777),
                         fontSize = 11.sp,
                         lineHeight = 15.sp
@@ -276,8 +277,19 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // 3문장 단계 탭 표시
-                    val sentences = listOf("이그드라실", "오늘 날씨 어때", "화면 아래로 내려줘")
+                    // 10문장 고정밀 생체 음향 캘리브레이션 탭
+                    val sentences = listOf(
+                        displayCallName,                              // 1. 단일 AI 호출어
+                        "이그드라실 도와줘",                           // 2. 기본 서브 호출
+                        "오늘 날씨는 어때?",                           // 3. 의문문 상승조 억양
+                        "화면 아래로 스크롤해줘",                      // 4. 일상 제어 명령
+                        "카톡 들어가서 메시지 확인해",                 // 5. 복합 연쇄 지시문
+                        "볼륨 조금만 키워줘",                          // 6. 음량/설정 조정
+                        "내일 오전 열 시에 알람 맞춰줘",              // 7. 시간/일정 설정
+                        "가장 가까운 편의점 어디야?",                  // 8. 위치/정보 질의
+                        "오늘 하루도 정말 수고 많았어",                // 9. 감정/부드러운 평서문
+                        "이제 홈 화면으로 돌아가줘"                    // 10. 단호한 확정 명령
+                    )
                     sentences.forEachIndexed { index, sentence ->
                         val step = index + 1
                         val isCurrent = step == currentCalibrationStep && !isVoiceCalibrated
@@ -286,25 +298,25 @@ fun SettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 3.dp)
+                                .padding(vertical = 2.dp)
                                 .background(
                                     if (isCurrent) Color(0xFF1E1E1E) else Color.Transparent,
                                     RoundedCornerShape(6.dp)
                                 )
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = if (isDone) "✓ " else "$step. ",
                                 color = if (isDone) Color(0xFFFFD700) else if (isCurrent) Color.White else Color(0xFF555555),
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             )
                             Text(
                                 text = "\"$sentence\"",
                                 color = if (isDone) Color(0xFFAAAAAA) else if (isCurrent) Color.White else Color(0xFF555555),
                                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             )
                         }
                     }
@@ -316,7 +328,7 @@ fun SettingsScreen(
                             onClick = {
                                 if (isRecordingCalibration) return@Button
                                 isRecordingCalibration = true
-                                calibrationFeedback = "🎙️ ${currentCalibrationStep}단계 발화 듣는 중... 말씀해주세요."
+                                calibrationFeedback = "🎙️ ${currentCalibrationStep}/10단계 발화 듣는 중... 말씀해주세요."
 
                                 coroutineScope.launch {
                                     val sample = recordVoiceSample(context)
@@ -328,7 +340,8 @@ fun SettingsScreen(
                                             isVoiceCalibrated = true
                                             currentCalibrationStep = 1
                                         } else {
-                                            currentCalibrationStep = 4 - result.remainingCount
+                                            currentCalibrationStep = (YggdrasilVoiceprintVerifier.CALIBRATION_TOTAL_STEPS + 1 - result.remainingCount)
+                                                .coerceIn(1, YggdrasilVoiceprintVerifier.CALIBRATION_TOTAL_STEPS)
                                         }
                                     } else {
                                         calibrationFeedback = "⚠️ 마이크 녹음 실패. 권한을 확인해주세요."
@@ -344,7 +357,7 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth().height(42.dp)
                         ) {
                             Text(
-                                text = if (isRecordingCalibration) "🎙️ 음성 분석 중..." else "🎙️ ${currentCalibrationStep}단계 녹음하고 등록",
+                                text = if (isRecordingCalibration) "🎙️ 24차원 음향 분석 중..." else "🎙️ ${currentCalibrationStep}/10단계 녹음하고 등록",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )

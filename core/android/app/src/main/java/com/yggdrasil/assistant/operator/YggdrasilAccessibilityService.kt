@@ -104,27 +104,45 @@ class YggdrasilAccessibilityService : AccessibilityService() {
     // ==========================================
 
     /**
-     * 특정 텍스트를 포함하는 화면 노드 리스트 검색
+     * 특정 텍스트를 포함하는 화면 노드 리스트 검색 (rootNode 즉시 recycle)
      */
     fun findNodesByText(text: String): List<AccessibilityNodeInfo> {
         val rootNode = rootInActiveWindow ?: return emptyList()
-        return rootNode.findAccessibilityNodeInfosByText(text) ?: emptyList()
+        return try {
+            rootNode.findAccessibilityNodeInfosByText(text) ?: emptyList()
+        } finally {
+            try {
+                rootNode.recycle()
+            } catch (_: Exception) {}
+        }
     }
 
     /**
-     * 특정 View ID(리소스 ID)로 화면 노드 리스트 검색
+     * 특정 View ID(리소스 ID)로 화면 노드 리스트 검색 (rootNode 즉시 recycle)
      */
     fun findNodesById(viewId: String): List<AccessibilityNodeInfo> {
         val rootNode = rootInActiveWindow ?: return emptyList()
-        return rootNode.findAccessibilityNodeInfosByViewId(viewId) ?: emptyList()
+        return try {
+            rootNode.findAccessibilityNodeInfosByViewId(viewId) ?: emptyList()
+        } finally {
+            try {
+                rootNode.recycle()
+            } catch (_: Exception) {}
+        }
     }
 
     /**
-     * 현재 화면의 모든 UI 요소를 계층형 데이터 모델로 덤프
+     * 현재 화면의 모든 UI 요소를 계층형 데이터 모델로 덤프 (전수 recycle 적용)
      */
     fun dumpScreenHierarchy(): Map<String, Any> {
         val rootNode = rootInActiveWindow ?: return emptyMap()
-        return parseNodeRecursive(rootNode)
+        return try {
+            parseNodeRecursive(rootNode)
+        } finally {
+            try {
+                rootNode.recycle()
+            } catch (_: Exception) {}
+        }
     }
 
     private fun parseNodeRecursive(node: AccessibilityNodeInfo): Map<String, Any> {
@@ -152,13 +170,18 @@ class YggdrasilAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
             if (child != null) {
-                children.add(parseNodeRecursive(child))
+                try {
+                    children.add(parseNodeRecursive(child))
+                } finally {
+                    try {
+                        child.recycle()
+                    } catch (_: Exception) {}
+                }
             }
         }
         if (children.isNotEmpty()) {
             nodeMap["children"] = children
         }
-
         return nodeMap
     }
 

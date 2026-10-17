@@ -15,6 +15,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.yggdrasil.assistant.persona.UserPersonaManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,14 +30,14 @@ import kotlin.math.sqrt
  * [과제 24]: 24시간 초저전력 온디바이스 핫워드 엔진 (Sub-Watt Hotword Detector)
  * 
  * 빅스비나 구글 어시스턴트의 도움 없이 단말기 화면 꺼짐/다른 앱 구동 중에도
- * "이그드라실" 음성 호출을 100% 오프라인 온디바이스로 감지하여 시스템 비서를 즉각 기동합니다.
+ * "이그드라실" 및 사용자 지정 AI 이름("자비스" 등) 음성 호출을 100% 오프라인 온디바이스로 감지합니다.
  * 
  * [초저전력 아키텍처 (Sub-Watt & Race-to-Sleep)]:
  * 1. 16kHz 모노 16bit PCM 초소형 오디오 캡처
- * 2. 1단계 VAD (Voice Activity Detection): RMS 소음 레벨이 임계치(-42dB) 이하인 침묵 구간에서는
+ * 2. 1단계 VAD (Voice Activity Detection): RMS 소음 레벨이 임계치(-38dB) 이하인 침묵 구간에서는
  *    추가 CPU 연산을 일체 건너뛰고 저전력 슬립 유지 (Wakelock 0회)
- * 3. 2단계 음향 포먼트 피크 매칭: "이-그-드-라-실" 한국어 4~5음절 고유의 에너지 포락선(Envelope)과
- *    피크 간격(120~350ms), 종성 마찰음(ZCR: Zero Crossing Rate) 시퀀스를 분석
+ * 3. 2단계 음향 포먼트 피크 매칭: 한국어 음절 수에 따른 동적 에너지 포락선(Envelope)과
+ *    피크 간격(60~360ms), 종성 마찰음(ZCR: Zero Crossing Rate) 시퀀스를 분석
  * 4. 감지 성공 시 일시적 WakeLock(1초) 획득 및 햅틱 진동 피드백 후 어시스턴트 세션 호출
  */
 class YggdrasilHotwordDetector private constructor(private val context: Context) {
@@ -49,13 +50,13 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         private const val FRAME_SIZE = 320 // 20ms @ 16kHz
 
-        // VAD 감도 설정 (과민 반응 및 키보드 타이핑/배경 잡음 원천 차단)
-        private const val BASE_SILENCE_DB = -38.0f // 백그라운드 영상 및 일상 타건음 차단
-        private const val FAR_FIELD_GAIN_BOOST = 1.0f // 인위적 디지털 게인 증폭 제거 (원음 기준)
+        // VAD 감도 설정 (원거리 일상 발화 수음 보장 및 타건음 차단)
+        private const val BASE_SILENCE_DB = -44.0f // 일상 발화(-42dB ~ -39dB) 정상 통과
+        private const val FAR_FIELD_GAIN_BOOST = 1.5f // 30~60cm 일상 원거리 음성 수음 게인 부스트
 
-        // "이그드라실" 발화 총 유효 지속시간: 500ms ~ 1400ms (25프레임 ~ 70프레임)
-        private const val MIN_UTTERANCE_FRAMES = 25
-        private const val MAX_UTTERANCE_FRAMES = 72
+        // 핫워드 발화 총 유효 지속시간: 260ms ~ 1500ms (13프레임 ~ 75프레임)
+        private const val MIN_UTTERANCE_FRAMES = 13
+        private const val MAX_UTTERANCE_FRAMES = 75
 
         @Volatile
         private var instance: YggdrasilHotwordDetector? = null
@@ -190,10 +191,10 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
                 continue
             }
 
-            // 원본 PCM 오디오 링버퍼에 복사 (화자 인증용)
+            // 원본 PCM 오디오 링버퍼에 복사 (화자 인증용) - Int 오버플로우 방어
             for (i in 0 until readCount) {
-                rawAudioRing[rawRingIndex % rawAudioRing.size] = rawBuffer[i]
-                rawRingIndex++
+                rawAudioRing[rawRingIndex] = rawBuffer[i]
+                rawRingIndex = (rawRingIndex + 1) % rawAudioRing.size
             }
 
             // 원거리 신호 소프트웨어 디지털 게인 증폭 (클리핑 방어)
@@ -207,23 +208,23 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
             val db = if (rms > 0) 20 * log10(rms / 32767.0f) else -100f
             val zcr = calculateZcr(boostedBuffer, readCount)
 
-            // 배경 소음 노이즈 플로어 슬로우 트래킹
-            if (db < adaptiveNoiseFloor + 3.0f) {
-                adaptiveNoiseFloor = (adaptiveNoiseFloor * 0.98f + db * 0.02f).coerceIn(-55.0f, -35.0f)
-            }
+            // 배경 소음 노이즈 플로어 양방향 적응형 트래킹 (소음 환경 진입 시 배터리 폭주 방어)
+            // 소음이 올라갈 때는 느리게(0.005), 조용해질 때는 빠르게(0.03) 수렴하여 오탐과 CPU 과부하 동시 차단
+            val alpha = if (db > adaptiveNoiseFloor) 0.005f else 0.03f
+            adaptiveNoiseFloor = (adaptiveNoiseFloor * (1f - alpha) + db * alpha).coerceIn(-55.0f, -32.0f)
 
             // 동적 침묵 임계치 (주변 소음보다 6.5dB 이상 확실한 음성만 통과)
             val dynamicThreshold = (adaptiveNoiseFloor + 6.5f).coerceAtLeast(BASE_SILENCE_DB)
 
             if (db < dynamicThreshold) {
-                // 침묵 구간: CPU 추가 연산 즉시 중단 (Race-to-Sleep)
-                if (continuousVoiceFrames > 0) {
+                silenceStreakFrames++
+                // 3프레임(60ms) 이상 연속 침묵일 때만 음성 발화 구간 종료로 판정 (자음 무성음/파열음 구간 음량 저하 보호)
+                if (silenceStreakFrames >= 3) {
                     continuousVoiceFrames = 0
                 }
-                silenceStreakFrames++
-                // 초저전력 파워 게이팅: 5프레임 이상 연속 침묵 시 코루틴을 25ms 슬립시켜 CPU 점유율 0.1% 미만 유지
-                if (silenceStreakFrames > 5) {
-                    delay(25)
+                // 초저전력 파워 게이팅: 8프레임 이상 연속 침묵 시 코루틴을 15ms 슬립
+                if (silenceStreakFrames > 8) {
+                    delay(15)
                 }
                 continue
             }
@@ -240,8 +241,8 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
 
             // 유효 발화 길이 구간 검증 (MIN_UTTERANCE_FRAMES ~ MAX_UTTERANCE_FRAMES)
             if (continuousVoiceFrames in MIN_UTTERANCE_FRAMES..MAX_UTTERANCE_FRAMES) {
-                val isHotwordMatched = matchYggdrasilAcousticPattern(continuousVoiceFrames, dynamicThreshold)
-                if (isHotwordMatched) {
+                val matchedWakeWord = matchWakeWordAcousticPattern(continuousVoiceFrames, dynamicThreshold)
+                if (matchedWakeWord != null) {
                     // 2단계 정밀 검증: 화자 음성 지문(Voiceprint) 및 MFCC 패턴 정밀 대조 (Zero-Allocation 재사용 버퍼)
                     val sampleCount = (continuousVoiceFrames * FRAME_SIZE).coerceAtMost(voiceWindowReusable.size)
                     val startOffset = (rawRingIndex - sampleCount + rawAudioRing.size) % rawAudioRing.size
@@ -251,12 +252,14 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
 
                     val verification = voiceprintVerifier.verifySpeakerAndHotword(voiceWindowReusable, sampleCount)
                     if (verification.isVerified) {
-                        Log.i(TAG, "⚡⚡ [화자 인증 & 핫워드 적중!] 본인 목소리 확인 (유사도: ${(verification.similarity * 100).toInt()}%, F0: ${verification.pitchHz.toInt()}Hz) ⚡⚡")
-                        triggerWakeup()
+                        Log.i(TAG, "⚡⚡ [화자 인증 & 핫워드('$matchedWakeWord') 적중!] 본인 확인 (유사도: ${(verification.similarity * 100).toInt()}%, F0: ${verification.pitchHz.toInt()}Hz) ⚡⚡")
                         continuousVoiceFrames = 0
-                        delay(2200) // 연속 중복 트리거 방지
+                        // 🌟 마이크 독점 양도: 세션 STT 엔진이 마이크를 즉시 획득할 수 있도록 핫워드 마이크 즉시 릴리즈
+                        stopListening()
+                        triggerWakeup()
+                        break
                     } else {
-                        Log.d(TAG, "오인식 기각: ${verification.message}")
+                        Log.d(TAG, "오인식 기각 ('$matchedWakeWord'): ${verification.message}")
                         continuousVoiceFrames = 0
                     }
                 }
@@ -268,10 +271,42 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
     }
 
     /**
-     * "이-그-드-라-실" 한국어 고유 음향 패턴 검증 (타이핑/영상 잡음 엄격 배제)
+     * 기본 핫워드("이그드라실") 및 설정된 사용자 맞춤 AI 이름("자비스" 등) 다중 매칭
      */
-    private fun matchYggdrasilAcousticPattern(frameLength: Int, noiseThreshold: Float): Boolean {
-        if (frameLength < MIN_UTTERANCE_FRAMES) return false
+    private fun matchWakeWordAcousticPattern(frameLength: Int, noiseThreshold: Float): String? {
+        val customName = try {
+            UserPersonaManager.getInstance(context).getProfile().aiName.trim()
+        } catch (_: Exception) { "" }
+
+        val candidateNames = LinkedHashSet<String>().apply {
+            if (customName.isNotBlank() && customName != "이그드라실") {
+                add(customName)
+            }
+            add("이그드라실")
+        }
+
+        for (candidate in candidateNames) {
+            if (matchSingleWakeWord(candidate, frameLength, noiseThreshold)) {
+                return candidate
+            }
+        }
+        return null
+    }
+
+    private fun matchSingleWakeWord(name: String, frameLength: Int, noiseThreshold: Float): Boolean {
+        val hangulSyllables = name.filter { it in '가'..'힣' }
+        val nSyllables = if (hangulSyllables.isNotEmpty()) hangulSyllables.length else name.length.coerceIn(2, 6)
+
+        // 음절 수에 따른 동적 발화 프레임 길이 검증
+        val minFrames = when (nSyllables) {
+            2 -> 11  // ~220ms (예: "오딘")
+            3 -> 13  // ~260ms (예: "자-비-스")
+            4 -> 17  // ~340ms
+            else -> 20 // ~400ms (예: "이-그-드-라-실")
+        }
+        val maxFrames = (nSyllables * 16).coerceIn(40, MAX_UTTERANCE_FRAMES)
+
+        if (frameLength !in minFrames..maxFrames) return false
 
         // 최근 frameLength만큼의 에너지 및 ZCR 윈도우 추출
         val energies = FloatArray(frameLength)
@@ -285,7 +320,7 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
         }
 
         // 🌟 키보드 타이핑/스크린 타건음 원천 차단:
-        // 기계식 타건음은 유성 모음이 없으므로 발화 전반부("이-그-드-라")의 ZCR이 0.16 이상으로 치솟음 -> 즉시 기각
+        // 기계식 타건음은 유성 모음이 없으므로 발화 전반부 ZCR이 0.16 이상으로 치솟음 -> 즉시 기각
         val earlyPart = (frameLength * 3) / 4
         var earlyZcrSum = 0f
         for (i in 0 until earlyPart) {
@@ -305,28 +340,43 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
             }
         }
 
-        // "이-그-드-라-실" 발화는 통상 3개~5개의 에너지 피크를 형성
-        if (peaks.size !in 3..5) {
+        // 음절 수에 비례하는 에너지 피크 개수 검증
+        val minPeaks = (nSyllables - 1).coerceAtLeast(2)
+        val maxPeaks = nSyllables + 1
+        if (peaks.size !in minPeaks..maxPeaks) {
             return false
         }
 
-        // 각 피크 간격 검증 (평균 음절 간격 80~320ms -> 4~17프레임)
+        // 각 피크 간격 검증 (평균 음절 간격 60~360ms -> 3~18프레임)
         for (p in 0 until peaks.size - 1) {
             val interval = peaks[p + 1] - peaks[p]
-            if (interval !in 4..18) {
+            if (interval !in 3..18) {
                 return false
             }
         }
 
-        // 종성 '실' 구간(발화의 마지막 25% 구간)의 마찰음 검증
-        val quarter = frameLength / 4
+        // 종성 음향 특성 검증:
+        // 마지막 글자가 마찰음/치경음(ㅅ, ㅆ, ㅈ, ㅊ, ㅎ 또는 받침 ㄹ, ㅅ - 예: "자비스"의 '스', "이그드라실"의 '실')을 포함하는지 확인
+        val lastChar = hangulSyllables.lastOrNull()
+        val isFricativeEnding = if (lastChar != null) {
+            val code = lastChar.code - 0xAC00
+            val cho = code / (21 * 28)
+            val jong = code % 28
+            (cho in listOf(9, 10, 12, 13, 14, 18)) || (jong in listOf(8, 19, 20, 22, 23))
+        } else false
+
+        val quarter = (frameLength / 4).coerceAtLeast(1)
         var lateZcrSum = 0f
         for (i in (frameLength - quarter) until frameLength) {
             lateZcrSum += zcrs[i]
         }
         val avgLateZcr = lateZcrSum / quarter
 
-        return avgLateZcr >= avgEarlyZcr * 1.2f && avgLateZcr > 0.11f
+        return if (isFricativeEnding) {
+            avgLateZcr >= avgEarlyZcr * 1.15f && avgLateZcr > 0.08f
+        } else {
+            avgLateZcr < 0.20f
+        }
     }
 
     /**
@@ -337,17 +387,8 @@ class YggdrasilHotwordDetector private constructor(private val context: Context)
      */
     @SuppressLint("InvalidWakeLockTag")
     private fun triggerWakeup() {
-        // 1. 단시간 WakeLock (Doze 모드 일시 탈출)
-        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-        val wakeLock = powerManager?.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-            "Yggdrasil:HotwordWakeup"
-        )
-        try {
-            wakeLock?.acquire(1200L) // 최대 1.2초 후 자동 반환 (배터리 방전 방어)
-        } catch (e: Exception) {
-            Log.w(TAG, "WakeLock 획득 예외", e)
-        }
+        // 1. 디스플레이 점등 및 Doze 모드 탈출
+        YggdrasilKeyguardWakeHelper.wakeUpScreen(context)
 
         // 2. 햅틱 피드백 (사용자에게 인식 완료 인지)
         vibrateFeedback()

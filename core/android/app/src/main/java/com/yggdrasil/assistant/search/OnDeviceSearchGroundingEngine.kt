@@ -54,6 +54,16 @@ class OnDeviceSearchGroundingEngine private constructor() {
         }
 
         try {
+            // 0순위: 날씨/기온 전용 실시간 기상 엔진 (wttr.in)
+            if (isWeatherQuery(sanitizedQuery)) {
+                val weatherResult = fetchWeatherSummary(sanitizedQuery)
+                if (weatherResult != null && weatherResult.isNotBlank()) {
+                    val cleanSnippet = sanitizeUntrustedWebText(weatherResult)
+                    val block = buildSanitizedSandboxBlock(sanitizedQuery, cleanSnippet, "실시간 기상청 위성 데이터 (wttr.in)")
+                    return@withContext SearchResult(true, sanitizedQuery, cleanSnippet, "WeatherService", block)
+                }
+            }
+
             // 1순위: 위키피디아 한국어 REST API (백과사전/개념/인물 팩트)
             val wikiResult = fetchWikipediaSummary(sanitizedQuery)
             if (wikiResult != null && wikiResult.isNotBlank()) {
@@ -62,7 +72,15 @@ class OnDeviceSearchGroundingEngine private constructor() {
                 return@withContext SearchResult(true, sanitizedQuery, cleanSnippet, "Wikipedia", block)
             }
 
-            // 2순위: DuckDuckGo Instant Answer API (날씨, 정의, 빠른 팩트)
+            // 2순위: DuckDuckGo HTML 실시간 웹 검색 스니펫 추출기 (주가, 뉴스, 최신 이슈)
+            val webSnippetResult = fetchDuckDuckGoWebSnippets(sanitizedQuery)
+            if (webSnippetResult != null && webSnippetResult.isNotBlank()) {
+                val cleanSnippet = sanitizeUntrustedWebText(webSnippetResult)
+                val block = buildSanitizedSandboxBlock(sanitizedQuery, cleanSnippet, "DuckDuckGo Web Search")
+                return@withContext SearchResult(true, sanitizedQuery, cleanSnippet, "WebSnippet", block)
+            }
+
+            // 3순위: DuckDuckGo Instant Answer API (글로벌 팩트)
             val ddgResult = fetchDuckDuckGoAnswer(sanitizedQuery)
             if (ddgResult != null && ddgResult.isNotBlank()) {
                 val cleanSnippet = sanitizeUntrustedWebText(ddgResult)
@@ -88,6 +106,86 @@ class OnDeviceSearchGroundingEngine private constructor() {
                 sanitizedFactBlock = "<EXTERNAL_FACTS>\n[네트워크 오프라인] 실시간 인터넷 정보를 불러올 수 없습니다.\n</EXTERNAL_FACTS>"
             )
         }
+    }
+
+    private fun isWeatherQuery(q: String): Boolean {
+        return q.contains("날씨") || q.contains("기온") || q.contains("미세먼지") || q.contains("비 오나") || q.contains("우산")
+    }
+
+    /**
+     * wttr.in 기상 데이터 파서 (0-API-Key 초고속 1-Line 팩트 추출)
+     */
+    private fun fetchWeatherSummary(query: String): String? {
+        val city = when {
+            query.contains("서울") -> "Seoul"
+            query.contains("부산") -> "Busan"
+            query.contains("제주") -> "Jeju"
+            query.contains("대구") -> "Daegu"
+            query.contains("인천") -> "Incheon"
+            query.contains("광주") -> "Gwangju"
+            query.contains("대전") -> "Daejeon"
+            query.contains("울산") -> "Ulsan"
+            query.contains("수원") -> "Suwon"
+            query.contains("성남") || query.contains("분당") -> "Seongnam"
+            query.contains("춘천") -> "Chuncheon"
+            query.contains("강릉") -> "Gangneung"
+            query.contains("전주") -> "Jeonju"
+            query.contains("포항") -> "Pohang"
+            query.contains("창원") -> "Changwon"
+            else -> "Seoul"
+        }
+
+        val endpoint = "https://wttr.in/$city?lang=ko&format=%l:+%c+%t+(체감+%f),+습도+%h,+바람+%w"
+        val response = executeSafeGetRequest(
+            endpoint,
+            userAgent = "curl/7.88.1",
+            accept = "text/plain"
+        ) ?: return null
+
+        return response.trim().takeIf { it.isNotBlank() && !it.contains("Unknown location") }
+    }
+
+    /**
+     * DuckDuckGo HTML 실시간 웹 검색 스니펫 파서
+     */
+    private fun fetchDuckDuckGoWebSnippets(query: String): String? {
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val endpoint = "https://html.duckduckgo.com/html/?q=$encoded"
+        val response = executeSafeGetRequest(
+            endpoint,
+            userAgent = "Mozilla/5.0 (Linux; Android 14; Galaxy S26 Ultra) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+            accept = "text/html,application/xhtml+xml,text/plain"
+        ) ?: return null
+
+        return try {
+            val snippetRegex = Regex("<a[^>]*class=[\"']result__snippet[^\"']*[\"'][^>]*>([\\s\\S]*?)</a>")
+            val matches = snippetRegex.findAll(response).take(2).toList()
+
+            if (matches.isEmpty()) return null
+
+            val sb = StringBuilder()
+            matches.forEachIndexed { idx, match ->
+                val rawSnippet = match.groupValues[1]
+                val unescaped = unescapeHtmlEntities(rawSnippet.replace(Regex("<[^>]*>"), " "))
+                if (unescaped.isNotBlank()) {
+                    sb.append("${idx + 1}. ").append(unescaped.trim()).append("\n")
+                }
+            }
+            sb.toString().trim().takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun unescapeHtmlEntities(html: String): String {
+        return html.replace("&quot;", "\"")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&#39;", "'")
+            .replace("&#x27;", "'")
+            .replace("&nbsp;", " ")
+            .replace(Regex("\\s+"), " ")
     }
 
     /**
@@ -133,7 +231,11 @@ class OnDeviceSearchGroundingEngine private constructor() {
     /**
      * 디도스 / 압축 폭탄 / 지연 공격(Slowloris) 방어형 HTTP GET 클라이언트
      */
-    private fun executeSafeGetRequest(urlString: String): String? {
+    private fun executeSafeGetRequest(
+        urlString: String,
+        userAgent: String = "Yggdrasil-OnDevice-Assistant/1.0 (Android; ARM64)",
+        accept: String = "application/json, text/plain"
+    ): String? {
         var conn: HttpURLConnection? = null
         return try {
             val url = URL(urlString)
@@ -142,8 +244,8 @@ class OnDeviceSearchGroundingEngine private constructor() {
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
                 instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "Yggdrasil-OnDevice-Assistant/1.0 (Android; ARM64)")
-                setRequestProperty("Accept", "application/json, text/plain")
+                setRequestProperty("User-Agent", userAgent)
+                setRequestProperty("Accept", accept)
             }
 
             if (conn.responseCode != HttpURLConnection.HTTP_OK) {

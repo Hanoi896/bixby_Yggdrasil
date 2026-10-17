@@ -31,7 +31,7 @@ class NotificationCollectorService : NotificationListenerService() {
     )
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var database: MuninSqlCipherDatabase? = null
+    private var ragManager: com.yggdrasil.assistant.rag.MuninRagManager? = null
 
     companion object {
         private const val TAG = "NotificationCollector"
@@ -48,11 +48,11 @@ class NotificationCollectorService : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         try {
-            val db = MuninSqlCipherDatabase(applicationContext, MuninEmbeddingEngine())
-            database = db
+            val munin = com.yggdrasil.assistant.rag.MuninRagManager.getInstance(applicationContext)
+            ragManager = munin
             // 초기 부팅 시 DB에서 최근 알림을 메모리 캐시로 복원
             serviceScope.launch {
-                val dbList = db.loadRecentNotifications(MAX_HISTORY)
+                val dbList = munin.loadRecentNotifications(MAX_HISTORY)
                 synchronized(memoryCache) {
                     memoryCache.clear()
                     for (item in dbList) {
@@ -80,6 +80,9 @@ class NotificationCollectorService : NotificationListenerService() {
         if (sbn == null) return
 
         val pkg = sbn.packageName ?: return
+        // 🛡️ 자기 자신(Yggdrasil) 및 시스템 기본 알림 무한 캡처 루프 원천 차단
+        if (pkg == packageName || pkg == "android") return
+
         val extras = sbn.notification.extras ?: return
 
         val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
@@ -114,7 +117,7 @@ class NotificationCollectorService : NotificationListenerService() {
         // DB에 비동기 영속화 (Zero-Loss)
         serviceScope.launch {
             try {
-                database?.insertNotification(
+                ragManager?.insertNotification(
                     MuninSqlCipherDatabase.DbNotification(
                         packageName = captured.packageName,
                         appName = captured.appName,

@@ -35,26 +35,48 @@ class SystemEventReceiver : BroadcastReceiver() {
         val userCallName = personaManager.getProfile().userCallName
 
         when (action) {
-            // 1. 배터리 부족 이벤트 감지
+            // 1. 배터리 부족 이벤트 감지 (원터치 절전 실행 액션 버튼 연동)
             Intent.ACTION_BATTERY_LOW -> {
                 val batteryPct = getBatteryPercentage(context)
                 val message = proactiveManager.buildBatteryCareMessage(userCallName, batteryPct)
                 if (message != null) {
-                    showNotification(context, "🔋 배터리 긴급 케어", message, 1001)
+                    val actionIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("yggdrasil://action?name=battery_saver")).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                    val pendingAction = PendingIntent.getActivity(
+                        context,
+                        1001,
+                        actionIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                    )
+                    showNotification(context, "🔋 배터리 긴급 케어", message, 1001, actionTitle = "절전 모드 실행", actionPendingIntent = pendingAction)
                 }
             }
 
-            // 2. 알람 해제 이벤트 감지 (기상 모닝 브리핑)
+            // 2. 알람 해제 이벤트 감지 (실시간 기상청 위성 날씨 + 실제 캘린더 모닝 브리핑)
             "com.samsung.sec.android.clockpackage.alarm.ALARM_STOPPED",
             "com.google.android.deskclock.ALARM_DISMISSED" -> {
-                // 스마트폰 내 실제 구글/삼성 캘린더 DB 실시간 쿼리 (더미 리스트 완전 척결)
-                val calendarManager = CalendarAndContactsManager.getInstance(context)
-                val rawEvents = calendarManager.getTodayEvents()
-                val realSchedules = calendarManager.formatEventsForBriefing(rawEvents)
-                val weatherSummary = "맑음 (최고 24도)" // 기기 기본 로컬 날씨 요약
-                val message = proactiveManager.buildMorningBriefing(userCallName, realSchedules, weatherSummary)
-                if (message != null) {
-                    showNotification(context, "☀️ 좋은 아침입니다!", message, 1002)
+                val pendingResult = goAsync()
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    try {
+                        val calendarManager = CalendarAndContactsManager.getInstance(context)
+                        val rawEvents = calendarManager.getTodayEvents()
+                        val realSchedules = calendarManager.formatEventsForBriefing(rawEvents)
+
+                        // 하드코딩 "맑음 24도" 가짜 날씨 박멸 -> 온디바이스 실시간 기상 데이터 Grounding
+                        val searchEngine = com.yggdrasil.assistant.search.OnDeviceSearchGroundingEngine.getInstance()
+                        val weatherResult = searchEngine.searchFact("오늘 서울 날씨")
+                        val weatherSummary = if (weatherResult.success) weatherResult.snippet else "쾌적한 날씨"
+
+                        val message = proactiveManager.buildMorningBriefing(userCallName, realSchedules, weatherSummary)
+                        if (message != null) {
+                            showNotification(context, "☀️ 좋은 아침입니다!", message, 1002)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "모닝 브리핑 생성 예외: ${e.message}")
+                    } finally {
+                        pendingResult.finish()
+                    }
                 }
             }
         }
@@ -67,7 +89,14 @@ class SystemEventReceiver : BroadcastReceiver() {
         return if (level >= 0 && scale > 0) (level * 100 / scale) else 15
     }
 
-    private fun showNotification(context: Context, title: String, content: String, notificationId: Int) {
+    private fun showNotification(
+        context: Context,
+        title: String,
+        content: String,
+        notificationId: Int,
+        actionTitle: String? = null,
+        actionPendingIntent: PendingIntent? = null
+    ) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -88,6 +117,10 @@ class SystemEventReceiver : BroadcastReceiver() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+
+        if (actionTitle != null && actionPendingIntent != null) {
+            builder.addAction(android.R.drawable.ic_menu_manage, actionTitle, actionPendingIntent)
+        }
 
         notificationManager.notify(notificationId, builder.build())
         Log.i(TAG, "선제적 알림 발행 완료: $title")

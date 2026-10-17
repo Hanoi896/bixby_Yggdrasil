@@ -108,11 +108,28 @@ class LocalLlmService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val modelPath = intent?.getStringExtra("MODEL_PATH")
-            ?: File(filesDir, "models/${ExaoneModelConfig.MODEL_FILE_NAME}").absolutePath
+    private fun findValidModelPath(explicitPath: String?): String? {
+        val candidates = mutableListOf<String>()
+        if (!explicitPath.isNullOrBlank()) candidates.add(explicitPath)
+        candidates.add(File(filesDir, "models/${ExaoneModelConfig.MODEL_FILE_NAME}").absolutePath)
+        candidates.add("/data/local/tmp/${ExaoneModelConfig.MODEL_FILE_NAME}")
+        getExternalFilesDir(null)?.let {
+            candidates.add(File(it, "models/${ExaoneModelConfig.MODEL_FILE_NAME}").absolutePath)
+        }
 
-        startLocalDaemon(modelPath)
+        for (path in candidates) {
+            val file = File(path)
+            if (file.exists() && file.isFile && file.length() > 50_000_000L) {
+                android.util.Log.i("LocalLlmService", "🎯 [온디바이스 LLM 모델 발견]: $path (${file.length() / (1024 * 1024)}MB)")
+                return path
+            }
+        }
+        return null
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val explicitPath = intent?.getStringExtra("MODEL_PATH")
+        startLocalDaemon(explicitPath)
 
         // 화면 꺼짐(Screen-off) 상태 헤드리스 음성 질의 및 액션 디스패치
         val headlessQuery = intent?.getStringExtra("HEADLESS_QUERY")
@@ -130,27 +147,50 @@ class LocalLlmService : Service() {
     }
 
     /**
-     * 화면을 켜지 않고 백그라운드에서 NPU 추론 후 0ms 음성(TTS)으로 즉각 피드백
+     * 화면을 켜지 않고 백그라운드에서 NPU 추론 후 0ms 음성(TTS)으로 즉각 피드백 (FactContextBuilder 직결)
      */
     fun executeHeadlessQuery(query: String) {
         serviceScope.launch(Dispatchers.Default) {
             try {
-                val systemPrompt = "당신은 갤럭시 S26 울트라 온디바이스 개인 비서 Yggdrasil입니다. 사용자의 요청에 대해 간결하고 자연스럽게 한국어로 답변하십시오."
-                val reply = generateWithPersona(systemPrompt, query)
+                val factBuilder = com.yggdrasil.assistant.rag.FactContextBuilder.getInstance(applicationContext)
+                val enriched = factBuilder.buildEnrichedContext(query)
+                val reply = if (!enriched.directAnswer.isNullOrBlank()) {
+                    enriched.directAnswer
+                } else {
+                    generateWithPersona(enriched.systemPrompt, enriched.enrichedUserPrompt)
+                }
                 speakHeadless(reply)
             } catch (e: Exception) {
                 speakHeadless("음성 답변 생성 중 오류가 발생했습니다.")
-                releaseWakeLockSafely()
+            } finally {
+                // 발화 시작 후 또는 실패 시 안전하게 락 해제
+                serviceScope.launch {
+                    kotlinx.coroutines.delay(2000)
+                    releaseWakeLockSafely()
+                }
             }
         }
     }
 
+    /**
+     * 화면 꺼짐 상태에서도 백그라운드 액션 실제 자율 집행 (AutoOperatorManager 연동)
+     */
     fun executeHeadlessAction(actionName: String, payload: String) {
         serviceScope.launch(Dispatchers.Default) {
             try {
                 speakHeadless("$actionName 작업을 시작합니다.")
+                val opManager = com.yggdrasil.assistant.operator.AutoOperatorManager.getInstance(applicationContext)
+                val report = opManager.executeNaturalCommand("$actionName $payload".trim())
+                if (report.message.isNotBlank()) {
+                    speakHeadless(report.message)
+                }
             } catch (e: Exception) {
-                releaseWakeLockSafely()
+                speakHeadless("$actionName 작업 중 오류가 발생했습니다.")
+            } finally {
+                serviceScope.launch {
+                    kotlinx.coroutines.delay(2000)
+                    releaseWakeLockSafely()
+                }
             }
         }
     }
@@ -196,14 +236,20 @@ class LocalLlmService : Service() {
     /**
      * NPU 가속 엔진 초기화 (HTTP 소켓 없는 100% 네이티브 JNI 직결)
      */
-    fun startLocalDaemon(modelPath: String): Boolean {
+    fun startLocalDaemon(modelPath: String? = null): Boolean {
         if (isDaemonRunning) return true
+
+        val validPath = findValidModelPath(modelPath)
+        if (validPath == null) {
+            android.util.Log.w("LocalLlmService", "⚠️ [모델 미발견] GGUF 모델 파일이 감지되지 않아 네이티브 엔진 초기화를 안전하게 보류합니다.")
+            return false
+        }
 
         val startTime = System.currentTimeMillis()
 
         // 네이티브 C++ NPU 가속 엔진 초기화 (Hexagon NPU 우선, HTTP 소켓 오버헤드 0%)
         val initialized = try {
-            initEngineNative(modelPath, ExaoneModelConfig.ACCELERATION_QNN_NPU)
+            initEngineNative(validPath, ExaoneModelConfig.ACCELERATION_QNN_NPU)
         } catch (e: UnsatisfiedLinkError) {
             false
         }

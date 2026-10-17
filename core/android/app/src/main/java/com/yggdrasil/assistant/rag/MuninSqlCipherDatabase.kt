@@ -406,6 +406,49 @@ class MuninSqlCipherDatabase(
         }
     }
 
+    /**
+     * 최근 대화 기록(is_dialogue=1) 암호화 DB에서 역순 추출
+     */
+    fun loadRecentDialogues(limit: Int = 30): List<MemoryRecord> {
+        val db = getEncryptedReadableDb()
+        val selection = "$COL_IS_DIALOGUE = 1"
+        val orderBy = "$COL_TIMESTAMP DESC"
+        val cursor = db.query(
+            TABLE_MEMORIES,
+            arrayOf(COL_ID, COL_CATEGORY, COL_CONTENT, COL_EMBEDDING, COL_TIMESTAMP, COL_IMPORTANCE, COL_IS_DIALOGUE),
+            selection,
+            null,
+            null,
+            null,
+            orderBy,
+            limit.toString()
+        )
+        val list = mutableListOf<MemoryRecord>()
+        cursor.use {
+            val idIdx = it.getColumnIndexOrThrow(COL_ID)
+            val catIdx = it.getColumnIndexOrThrow(COL_CATEGORY)
+            val contentIdx = it.getColumnIndexOrThrow(COL_CONTENT)
+            val timeIdx = it.getColumnIndexOrThrow(COL_TIMESTAMP)
+            val impIdx = it.getColumnIndexOrThrow(COL_IMPORTANCE)
+            val diaIdx = it.getColumnIndexOrThrow(COL_IS_DIALOGUE)
+
+            while (it.moveToNext()) {
+                list.add(
+                    MemoryRecord(
+                        id = it.getString(idIdx),
+                        category = it.getString(catIdx),
+                        content = it.getString(contentIdx),
+                        similarity = 1.0f,
+                        timestamp = it.getLong(timeIdx),
+                        importance = it.getInt(impIdx),
+                        isDialogue = it.getInt(diaIdx) == 1
+                    )
+                )
+            }
+        }
+        return list.reversed()
+    }
+
     // ==========================================
     // 감사 로그 해시 체인 영속화 메서드
     // ==========================================
