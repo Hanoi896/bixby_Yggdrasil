@@ -22,6 +22,15 @@ class BreakGlassSecurityManager(private val context: Context) {
         private const val KEY_SALT = "master_salt_hex"
         private const val KEY_PASSWORD_HASH = "master_password_hash_hex"
         private const val DEFAULT_INITIAL_PASS = "yggdrasil2026"
+
+        @Volatile
+        private var instance: BreakGlassSecurityManager? = null
+
+        fun getInstance(context: Context): BreakGlassSecurityManager {
+            return instance ?: synchronized(this) {
+                instance ?: BreakGlassSecurityManager(context.applicationContext).also { instance = it }
+            }
+        }
     }
 
     data class SecurityStatus(
@@ -73,6 +82,13 @@ class BreakGlassSecurityManager(private val context: Context) {
         onEmergencyLockdownListener?.invoke(reason)
 
         return getSecurityStatus()
+    }
+
+    /**
+     * 긴급 차단 트리거 alias
+     */
+    fun triggerEmergencyLockdown(reason: String = "사용자 UI 원클릭 긴급 차단"): SecurityStatus {
+        return triggerBreakGlass(reason)
     }
 
     /**

@@ -9,8 +9,8 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.util.Log
 import android.util.LruCache
-import net.zetetic.database.sqlcipher.SQLiteDatabase
-import net.zetetic.database.sqlcipher.SQLiteOpenHelper
+import net.sqlcipher.database.SQLiteDatabase
+import net.sqlcipher.database.SQLiteOpenHelper
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.util.UUID

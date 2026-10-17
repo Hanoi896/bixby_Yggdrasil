@@ -118,5 +118,5 @@ class MuninRagManager(context: Context) {
     /**
      * 현재 보관 중인 총 기억 수
      */
-    fun getTotalMemoryCount(): Int = database.getMemoryCount()
+    fun getTotalMemoryCount(): Int = database.getMemoryCount().toInt()
 }

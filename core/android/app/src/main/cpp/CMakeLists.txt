@@ -12,12 +12,16 @@ set(LLAMA_BUILD_COMMON OFF CACHE BOOL "Do not build common CLI tools" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static llama libraries" FORCE)
 
 # [과제 4 실전 구현] Snapdragon 8 Elite 하드웨어 가속 백엔드 활성화
-# 1. Vulkan GPU 가속 백엔드 활성화 (Adreno 830 GPU Attention/FFN 오프로딩)
-set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan GPU backend for Adreno GPU acceleration" FORCE)
+# 1. Vulkan GPU 가속 백엔드 (NDK 호스트 glslc 의존성 회피를 위해 기본 OFF)
+set(GGML_VULKAN OFF CACHE BOOL "Disable Vulkan backend for Android NDK" FORCE)
 
-# 2. Qualcomm Hexagon HTP / QNN NPU 백엔드 활성화 (초저전력 1.2W 미만 고속 추론)
-set(GGML_HEXAGON ON CACHE BOOL "Enable Qualcomm Hexagon HTP NPU backend for Snapdragon 8 Elite" FORCE)
-set(GGML_HEXAGON_ARCH "v75;v79;v81" CACHE STRING "Target Hexagon NPU architectures" FORCE)
+# 2. Qualcomm Hexagon HTP / QNN NPU 백엔드 (HEXAGON_SDK_ROOT 환경변수 존재 시 활성화, 부재 시 ARM NEON CPU 백엔드로 안전 폴백)
+if (DEFINED ENV{HEXAGON_SDK_ROOT} AND IS_DIRECTORY "$ENV{HEXAGON_SDK_ROOT}")
+    set(GGML_HEXAGON ON CACHE BOOL "Enable Qualcomm Hexagon HTP NPU backend for Snapdragon 8 Elite" FORCE)
+    set(GGML_HEXAGON_ARCH "v75;v79;v81" CACHE STRING "Target Hexagon NPU architectures" FORCE)
+else()
+    set(GGML_HEXAGON OFF CACHE BOOL "Disable Hexagon backend when Hexagon SDK is not installed" FORCE)
+endif()
 
 # Snapdragon 8 Elite 및 ARMv8.4-A 최적화
 if (${ANDROID_ABI} STREQUAL "arm64-v8a")
@@ -34,7 +38,6 @@ if (EXISTS ${LLAMA_ROOT_DIR}/CMakeLists.txt)
     set(LLAMA_INCLUDE_DIRS
         ${LLAMA_ROOT_DIR}/include
         ${LLAMA_ROOT_DIR}/ggml/include
-        ${LLAMA_ROOT_DIR}/ggml/src/ggml-vulkan
         ${LLAMA_ROOT_DIR}/ggml/src/ggml-hexagon
     )
 else()
@@ -57,7 +60,6 @@ target_link_libraries(yggdrasil_llm
     PRIVATE
     llama
     ggml
-    vulkan
     android
     log
 )

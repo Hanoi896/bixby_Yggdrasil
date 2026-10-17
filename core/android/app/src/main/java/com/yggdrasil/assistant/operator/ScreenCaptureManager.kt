@@ -36,10 +36,6 @@ import java.util.concurrent.Executor
  */
 class ScreenCaptureManager(private val context: Context) {
 
-    companion object {
-        private const val TAG = "ScreenCaptureManager"
-    }
-
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val textRecognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
     private val mainExecutor: Executor = Executor { command -> Handler(Looper.getMainLooper()).post(command) }

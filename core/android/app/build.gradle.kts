@@ -26,9 +26,7 @@ android {
             cmake {
                 cppFlags("-std=c++17 -O3 -flto")
                 arguments(
-                    "-DANDROID_STL=c++_shared",
-                    "-DGGML_VULKAN=ON",
-                    "-DGGML_HEXAGON=ON"
+                    "-DANDROID_STL=c++_shared"
                 )
             }
         }
@@ -111,6 +109,9 @@ dependencies {
 
     // WorkManager (백그라운드 캐시 GC)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // DocumentFile (Storage Access Framework)
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Google ML Kit 온디바이스 Vision OCR (한국어 및 라틴어 지원)
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
