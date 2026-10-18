@@ -209,7 +209,7 @@ class AutoOperatorManager private constructor(private val context: Context) {
                 var isSecureBlackout = false
                 val latch = java.util.concurrent.CountDownLatch(1)
 
-                captureManager.findElementWithSecurity(clickTarget) { matched, blackout ->
+                captureManager.findElementWithSecurity(clickTarget) { matched: ScreenCaptureManager.RecognizedElement?, blackout: Boolean ->
                     isSecureBlackout = blackout
                     ocrTargetPoint = matched?.centerPoint
                     latch.countDown()
@@ -317,6 +317,9 @@ class AutoOperatorManager private constructor(private val context: Context) {
         serviceParam: YggdrasilAccessibilityService? = null
     ): ExecutionReport = withContext(Dispatchers.Default) {
         val service = serviceParam ?: YggdrasilAccessibilityService.getInstance()
+        if (service == null) {
+            return@withContext ExecutionReport(false, "접근성 서비스가 활성화되지 않았습니다. 설정에서 이그드라실 접근성 서비스를 켜주세요.")
+        }
         if (service.isUserInterrupted.get()) {
             return@withContext ExecutionReport(false, "사용자 터치로 인해 메시지 발송이 중단되었습니다.")
         }
@@ -415,7 +418,6 @@ class AutoOperatorManager private constructor(private val context: Context) {
 
         return@withContext ExecutionReport(true, "'$appName'을 실행하여 '$targetPerson' 대상을 탐색했습니다.")
     }
-    }
 
     /**
      * 복합 앱 실행 후 작업 파이프라인 ("플레이스토어 실행해서 브롤스타즈 깔아줘", "유튜브 켜서 아이유 틀어줘")
@@ -440,21 +442,21 @@ class AutoOperatorManager private constructor(private val context: Context) {
 
         Log.i(TAG, "⛓️ [복합 앱 액션 시작]: 앱='$appName', 액션='$actionPart'")
 
-        // 1단계: 대상 앱 실행
+        // 1단계: 대상 앱 실행 및 화면 정착 동적 대기
         val launched = launchAppByName(appName)
         if (!launched) return null
-        delay(1600)
+        waitForCondition(service, timeoutMs = 2500L) { service.rootInActiveWindow != null }
 
         // 2단계: 검색창 또는 검색 버튼 탐색
-        val searchNode = findBestMatchingNode(service, "검색")
-            ?: findBestMatchingNode(service, "Search")
+        val searchNode = waitForNode(service, "검색", timeoutMs = 1500L)
+            ?: waitForNode(service, "Search", timeoutMs = 1000L)
         if (searchNode != null && !searchNode.isEditable) {
             val sRect = android.graphics.Rect()
             searchNode.getBoundsInScreen(sRect)
             showVirtualPointerAt(sRect.centerX().toFloat(), sRect.centerY().toFloat())
-            delay(150)
+            delay(100)
             service.performClickOnNode(searchNode)
-            delay(800)
+            waitForCondition(service, timeoutMs = 1500L) { findFirstEditableNode(service.rootInActiveWindow) != null }
         }
 
         // 검색 키워드 추출 (예: "브롤스타즈 깔아줘" -> "브롤스타즈", "아이유 틀어줘" -> "아이유")
@@ -467,32 +469,33 @@ class AutoOperatorManager private constructor(private val context: Context) {
             val eRect = android.graphics.Rect()
             editNode.getBoundsInScreen(eRect)
             showVirtualPointerAt(eRect.centerX().toFloat(), eRect.centerY().toFloat())
-            delay(150)
+            delay(100)
 
             val args = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, keyword)
             }
             editNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            delay(600)
+            waitForCondition(service, timeoutMs = 1000L) {
+                findBestMatchingNode(service, "검색") != null || findBestMatchingNode(service, keyword) != null
+            }
 
             // 검색 실행 (검색 버튼 또는 첫 번째 일치 항목 클릭)
             val execSearch = findBestMatchingNode(service, "검색")
                 ?: findBestMatchingNode(service, keyword)
             if (execSearch != null && execSearch != editNode) {
                 service.performClickOnNode(execSearch)
-                delay(1200)
+                waitForCondition(service, timeoutMs = 2000L) { service.rootInActiveWindow != null }
             }
 
             // '설치' / '다운로드' 명령인 경우 설치 버튼 자동 클릭
             if (actionPart.contains("깔아") || actionPart.contains("설치") || actionPart.contains("다운")) {
-                delay(1200)
-                val installBtn = findBestMatchingNode(service, "설치")
-                    ?: findBestMatchingNode(service, "받기")
+                val installBtn = waitForNode(service, "설치", timeoutMs = 2500L)
+                    ?: waitForNode(service, "받기", timeoutMs = 1500L)
                 if (installBtn != null) {
                     val iRect = android.graphics.Rect()
                     installBtn.getBoundsInScreen(iRect)
                     showVirtualPointerAt(iRect.centerX().toFloat(), iRect.centerY().toFloat())
-                    delay(150)
+                    delay(100)
                     service.performClickOnNode(installBtn)
                     return ExecutionReport(true, "'$appName'에서 '$keyword' 검색 후 '설치'를 시작했습니다.")
                 }

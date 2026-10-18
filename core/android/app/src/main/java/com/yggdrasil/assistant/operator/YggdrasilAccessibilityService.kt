@@ -51,6 +51,20 @@ class YggdrasilAccessibilityService : AccessibilityService() {
         instance = this
     }
 
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        if (instance == this) {
+            instance = null
+        }
+        return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        if (instance == this) {
+            instance = null
+        }
+        super.onDestroy()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val eventType = event.eventType
@@ -106,13 +120,6 @@ class YggdrasilAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         // 접근성 서비스 일시 중단 시 처리
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (instance == this) {
-            instance = null
-        }
     }
 
     // ==========================================

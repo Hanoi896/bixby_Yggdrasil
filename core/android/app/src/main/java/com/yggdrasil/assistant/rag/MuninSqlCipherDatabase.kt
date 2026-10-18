@@ -12,6 +12,7 @@ import android.util.LruCache
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SQLiteOpenHelper
 import java.security.KeyStore
+import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -439,7 +440,8 @@ class MuninSqlCipherDatabase(
             MAX_CANDIDATE_POOL.toString()
         )
 
-        val candidates = mutableListOf<MemoryRecord>()
+        // 업계 표준: O(N log N) 전체 정렬 대신 O(N log K) Min-Heap 우선순위 큐 적용
+        val topKQueue = java.util.PriorityQueue<MemoryRecord>(limit + 1, compareBy { it.similarity })
         val nowMs = System.currentTimeMillis()
 
         cursor.use {
@@ -458,7 +460,10 @@ class MuninSqlCipherDatabase(
                 val importance = it.getInt(impIdx)
                 val isDialogue = it.getInt(diaIdx) == 1
 
-                // 1. Dense 임베딩 코사인 유사도
+                // 1. Sparse 한국어 BM25 키워드 일치 점수 사전 계산
+                val bm25Score = computeKoreanBm25Score(queryKeywords, content)
+
+                // 2. Dense 임베딩 코사인 유사도
                 var recordVector = vectorCache.get(recordId)
                 if (recordVector == null) {
                     val blob = it.getBlob(embIdx)
@@ -466,9 +471,6 @@ class MuninSqlCipherDatabase(
                     vectorCache.put(recordId, recordVector)
                 }
                 val cosineSim = embeddingEngine.calculateCosineSimilarity(queryVector, recordVector)
-
-                // 2. Sparse 한국어 BM25 키워드 일치 점수
-                val bm25Score = computeKoreanBm25Score(queryKeywords, content)
 
                 // 3. 타임스탬프 파싱 및 시간 감쇠(Time-Decay) 계산
                 val recordTimeMs = try {
@@ -478,7 +480,6 @@ class MuninSqlCipherDatabase(
                 }
                 val deltaDays = kotlin.math.max(0.0, (nowMs - recordTimeMs) / (1000.0 * 86400.0))
 
-                // 중요도 4 이상(고정 선호도/비상연락망)은 시간 감쇠 면제, 일반 대화/잡담은 180일(6개월) 경과 시 감쇠 적용
                 val lambda = if (importance >= 4) 0.0005 else if (isDialogue) 0.018 else 0.008
                 val timeDecay = kotlin.math.exp(-lambda * deltaDays).toFloat()
 
@@ -487,23 +488,29 @@ class MuninSqlCipherDatabase(
                 val finalScore = rawHybrid * timeDecay
 
                 if (finalScore >= minSimilarity || (bm25Score >= 0.8f && timeDecay >= 0.4f)) {
-                    candidates.add(
-                        MemoryRecord(
-                            id = recordId,
-                            category = it.getString(catIdx),
-                            content = content,
-                            timestamp = timestampStr,
-                            importance = importance,
-                            isDialogue = isDialogue,
-                            similarity = finalScore
-                        )
+                    val record = MemoryRecord(
+                        id = recordId,
+                        category = it.getString(catIdx),
+                        content = content,
+                        timestamp = timestampStr,
+                        importance = importance,
+                        isDialogue = isDialogue,
+                        similarity = finalScore
                     )
+
+                    topKQueue.offer(record)
+                    if (topKQueue.size > limit) {
+                        topKQueue.poll() // 가장 점수가 낮은 후보 즉각 탈락
+                    }
                 }
             }
         }
 
-        candidates.sortByDescending { it.similarity }
-        return candidates.take(limit)
+        val resultList = mutableListOf<MemoryRecord>()
+        while (topKQueue.isNotEmpty()) {
+            resultList.add(topKQueue.poll())
+        }
+        return resultList.asReversed()
     }
 
     /**
@@ -550,7 +557,7 @@ class MuninSqlCipherDatabase(
                         category = it.getString(catIdx),
                         content = it.getString(contentIdx),
                         similarity = 1.0f,
-                        timestamp = it.getLong(timeIdx),
+                        timestamp = it.getString(timeIdx) ?: "",
                         importance = it.getInt(impIdx),
                         isDialogue = it.getInt(diaIdx) == 1
                     )

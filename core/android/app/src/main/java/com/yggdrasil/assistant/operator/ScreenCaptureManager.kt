@@ -153,6 +153,15 @@ class ScreenCaptureManager(private val context: Context) {
         @Volatile
         private var lastAlertTime = 0L
 
+        @Volatile
+        private var instance: ScreenCaptureManager? = null
+
+        fun getInstance(context: Context): ScreenCaptureManager {
+            return instance ?: synchronized(this) {
+                instance ?: ScreenCaptureManager(context.applicationContext).also { instance = it }
+            }
+        }
+
         /**
          * 접근성 서비스가 LMK로 종료되었거나 비활성화되었을 때 침묵 실패를 막고 사용자에게 즉시 알림 및 원클릭 복구 제공
          */
@@ -218,14 +227,21 @@ class ScreenCaptureManager(private val context: Context) {
             val rowStride = planes[0].rowStride
             val rowPadding = rowStride - pixelStride * screenWidth
 
+            val rawWidth = screenWidth + rowPadding / pixelStride
             val bitmap = Bitmap.createBitmap(
-                screenWidth + rowPadding / pixelStride,
+                rawWidth,
                 screenHeight,
                 Bitmap.Config.ARGB_8888
             )
             bitmap.copyPixelsFromBuffer(buffer)
 
-            return Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+            if (rowPadding == 0) {
+                return bitmap
+            }
+
+            val cropped = Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+            bitmap.recycle() // 중간 버퍼 비트맵 즉시 메모리 반환
+            return cropped
         } catch (e: Exception) {
             Log.e(TAG, "MediaProjection 캡처 에러", e)
             return null

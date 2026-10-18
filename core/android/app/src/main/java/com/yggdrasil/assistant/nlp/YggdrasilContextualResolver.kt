@@ -49,6 +49,17 @@ class YggdrasilContextualResolver private constructor(private val context: Conte
     }
 
     /**
+     * 후속 대화 맥락 복원을 위해 추출된 주요 엔티티(대상, 앱 등)를 맥락 메모리에 기록
+     */
+    fun recordEntity(entity: String, type: String = "") {
+        if (entity.isBlank()) return
+        recentContextEntities.addFirst(entity.trim())
+        while (recentContextEntities.size > 5) {
+            recentContextEntities.pollLast()
+        }
+    }
+
+    /**
      * 오발화 복원(Discourse Fallback)
      * 사용자가 말을 더듬거나 도중에 바꿀 때 ("아니 그거 말고 엄마한테 카톡으로")
      * 직전 명령의 엔티티(대상, 내용)를 유지하며 새로 정정한 부분만 정밀 치환 복원

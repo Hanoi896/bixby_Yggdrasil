@@ -173,125 +173,147 @@ class ExaoneModelDownloader private constructor(private val context: Context) {
                 val targetFile = File(targetDir, ExaoneModelConfig.MODEL_FILE_NAME)
                 val partFile = File(targetDir, "${ExaoneModelConfig.MODEL_FILE_NAME}.part")
 
-                var existingBytes = if (partFile.exists()) partFile.length() else 0L
+                // 업계 표준: 대용량 4GB 다운로드 네트워크 전환/단절 방어 지수 백오프(Exponential Backoff) 이어받기 루프
+                val maxRetries = 3
+                var retryCount = 0
+                var downloadSuccess = false
 
-                Log.i(TAG, "다운로드 파이프라인 진입: 기존 이어받기 크기 = $existingBytes bytes")
+                while (!downloadSuccess && retryCount <= maxRetries) {
+                    var connection: HttpURLConnection? = null
+                    var raf: RandomAccessFile? = null
+                    var inputStream: java.io.InputStream? = null
+                    try {
+                        var existingBytes = if (partFile.exists()) partFile.length() else 0L
+                        Log.i(TAG, "다운로드 파이프라인 진입: 기존 이어받기 크기 = $existingBytes bytes (재시도: $retryCount/$maxRetries)")
 
-                // 3. HTTP 연결 및 Range 헤더 설정
-                val url = URL(downloadUrl)
-                var connection = url.openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 30000
-                connection.instanceFollowRedirects = true
-                connection.setRequestProperty("User-Agent", "Yggdrasil-Android-Assistant/1.0")
+                        val url = URL(downloadUrl)
+                        connection = url.openConnection() as HttpURLConnection
+                        connection.connectTimeout = 15000
+                        connection.readTimeout = 30000
+                        connection.instanceFollowRedirects = true
+                        connection.setRequestProperty("User-Agent", "Yggdrasil-Android-Assistant/1.0")
 
-                if (existingBytes > 0) {
-                    connection.setRequestProperty("Range", "bytes=$existingBytes-")
-                }
+                        if (existingBytes > 0) {
+                            connection.setRequestProperty("Range", "bytes=$existingBytes-")
+                        }
 
-                var responseCode = connection.responseCode
+                        var responseCode = connection.responseCode
 
-                // 301/302 리다이렉트 수동 추적 (HuggingFace CDN 처리)
-                if (responseCode == HttpURLConnection.HTTP_MOVED_PERM || 
-                    responseCode == HttpURLConnection.HTTP_MOVED_TEMP || 
-                    responseCode == 307 || responseCode == 308) {
-                    val redirectUrl = connection.getHeaderField("Location")
-                    connection.disconnect()
-                    connection = URL(redirectUrl).openConnection() as HttpURLConnection
-                    connection.connectTimeout = 15000
-                    connection.readTimeout = 30000
-                    connection.setRequestProperty("User-Agent", "Yggdrasil-Android-Assistant/1.0")
-                    if (existingBytes > 0) {
-                        connection.setRequestProperty("Range", "bytes=$existingBytes-")
+                        // 301/302 리다이렉트 수동 추적 (HuggingFace CDN 처리)
+                        if (responseCode == HttpURLConnection.HTTP_MOVED_PERM || 
+                            responseCode == HttpURLConnection.HTTP_MOVED_TEMP || 
+                            responseCode == 307 || responseCode == 308) {
+                            val redirectUrl = connection.getHeaderField("Location")
+                            connection.disconnect()
+                            connection = URL(redirectUrl).openConnection() as HttpURLConnection
+                            connection.connectTimeout = 15000
+                            connection.readTimeout = 30000
+                            connection.setRequestProperty("User-Agent", "Yggdrasil-Android-Assistant/1.0")
+                            if (existingBytes > 0) {
+                                connection.setRequestProperty("Range", "bytes=$existingBytes-")
+                            }
+                            responseCode = connection.responseCode
+                        }
+
+                        val isPartial = (responseCode == HttpURLConnection.HTTP_PARTIAL)
+                        if (!isPartial && responseCode != HttpURLConnection.HTTP_OK) {
+                            if (responseCode == 416) {
+                                Log.i(TAG, "HTTP 416: 이미 파일이 완성되었거나 범위 오류. 파트 파일 검증으로 직행.")
+                                downloadSuccess = true
+                                break
+                            } else {
+                                throw IllegalStateException("서버 응답 오류 (HTTP $responseCode)")
+                            }
+                        }
+
+                        val contentLength = connection.contentLengthLong
+                        val totalBytes = if (isPartial) {
+                            existingBytes + contentLength
+                        } else if (contentLength > 0) {
+                            contentLength
+                        } else {
+                            ExaoneModelConfig.ESTIMATED_MODEL_SIZE_BYTES
+                        }
+
+                        if (!isPartial && existingBytes > 0) {
+                            partFile.delete()
+                            existingBytes = 0L
+                        }
+
+                        _progressFlow.value = _progressFlow.value.copy(
+                            status = DownloadStatus.DOWNLOADING,
+                            totalBytes = totalBytes,
+                            downloadedBytes = existingBytes,
+                            freeStorageBytes = freeBytes,
+                            isWifi = isConnectedToWifi(),
+                            errorMessage = null
+                        )
+
+                        raf = RandomAccessFile(partFile, "rw")
+                        raf.seek(existingBytes)
+
+                        inputStream = connection.inputStream
+                        val buffer = ByteArray(64 * 1024) // 64KB 고속 버퍼
+                        var bytesRead: Int
+                        var currentDownloaded = existingBytes
+                        var speedMeasureStartTime = System.currentTimeMillis()
+                        var bytesReadSinceMeasure = 0L
+                        var currentSpeed = 0L
+
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            if (isPauseRequested) {
+                                _progressFlow.value = _progressFlow.value.copy(status = DownloadStatus.PAUSED)
+                                Log.i(TAG, "사용자에 의해 다운로드 일시 중지됨.")
+                                return@launch
+                            }
+
+                            raf.write(buffer, 0, bytesRead)
+                            currentDownloaded += bytesRead
+                            bytesReadSinceMeasure += bytesRead
+
+                            val now = System.currentTimeMillis()
+                            val elapsed = now - speedMeasureStartTime
+                            if (elapsed >= 1000L) {
+                                currentSpeed = (bytesReadSinceMeasure * 1000L) / elapsed
+                                speedMeasureStartTime = now
+                                bytesReadSinceMeasure = 0L
+                            }
+
+                            val percent = if (totalBytes > 0) ((currentDownloaded * 100) / totalBytes).toInt().coerceIn(0, 99) else 0
+                            val remainingBytes = (totalBytes - currentDownloaded).coerceAtLeast(0L)
+                            val eta = if (currentSpeed > 0) remainingBytes / currentSpeed else 0L
+
+                            _progressFlow.value = _progressFlow.value.copy(
+                                downloadedBytes = currentDownloaded,
+                                totalBytes = totalBytes,
+                                progressPercent = percent,
+                                speedBytesPerSec = currentSpeed,
+                                etaSeconds = eta,
+                                isWifi = isConnectedToWifi()
+                            )
+                        }
+
+                        downloadSuccess = true
+                    } catch (e: Exception) {
+                        if (isPauseRequested) return@launch
+                        if (e is CancellationException) throw e
+                        retryCount++
+                        if (retryCount <= maxRetries) {
+                            val backoffMs = (1000L * (1 shl retryCount)) // 2s, 4s, 8s 지수 백오프
+                            Log.w(TAG, "다운로드 중단 발생 (${e.message}). ${backoffMs}ms 후 자동 이어받기 재시도 ($retryCount/$maxRetries)...")
+                            _progressFlow.value = _progressFlow.value.copy(
+                                errorMessage = "네트워크 불안정 감지: ${backoffMs / 1000}초 후 자동 이어받기 ($retryCount/$maxRetries)..."
+                            )
+                            delay(backoffMs)
+                        } else {
+                            throw e
+                        }
+                    } finally {
+                        try { raf?.close() } catch (_: Exception) {}
+                        try { inputStream?.close() } catch (_: Exception) {}
+                        try { connection?.disconnect() } catch (_: Exception) {}
                     }
-                    responseCode = connection.responseCode
                 }
-
-                val isPartial = (responseCode == HttpURLConnection.HTTP_PARTIAL)
-                if (!isPartial && responseCode != HttpURLConnection.HTTP_OK) {
-                    if (responseCode == 416) {
-                        // 이미 다 받았거나 범위 오류
-                        Log.i(TAG, "HTTP 416: 이미 파일이 완성되었거나 범위 오류. 파트 파일 검증으로 직행.")
-                    } else {
-                        throw IllegalStateException("서버 응답 오류 (HTTP $responseCode)")
-                    }
-                }
-
-                val contentLength = connection.contentLengthLong
-                val totalBytes = if (isPartial) {
-                    existingBytes + contentLength
-                } else if (contentLength > 0) {
-                    contentLength
-                } else {
-                    ExaoneModelConfig.ESTIMATED_MODEL_SIZE_BYTES
-                }
-
-                if (!isPartial && existingBytes > 0) {
-                    // 서버가 Range를 지원하지 않으면 처음부터 재다운로드
-                    partFile.delete()
-                    existingBytes = 0L
-                }
-
-                _progressFlow.value = _progressFlow.value.copy(
-                    status = DownloadStatus.DOWNLOADING,
-                    totalBytes = totalBytes,
-                    downloadedBytes = existingBytes,
-                    freeStorageBytes = freeBytes,
-                    isWifi = isConnectedToWifi(),
-                    errorMessage = null
-                )
-
-                // 4. 스트리밍 다운로드 루프
-                val raf = RandomAccessFile(partFile, "rw")
-                raf.seek(existingBytes)
-
-                val inputStream = connection.inputStream
-                val buffer = ByteArray(64 * 1024) // 64KB 고속 버퍼
-                var bytesRead: Int
-                var currentDownloaded = existingBytes
-                var speedMeasureStartTime = System.currentTimeMillis()
-                var bytesReadSinceMeasure = 0L
-                var currentSpeed = 0L
-
-                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                    if (isPauseRequested) {
-                        raf.close()
-                        inputStream.close()
-                        connection.disconnect()
-                        _progressFlow.value = _progressFlow.value.copy(status = DownloadStatus.PAUSED)
-                        Log.i(TAG, "사용자에 의해 다운로드 일시 중지됨.")
-                        return@launch
-                    }
-
-                    raf.write(buffer, 0, bytesRead)
-                    currentDownloaded += bytesRead
-                    bytesReadSinceMeasure += bytesRead
-
-                    val now = System.currentTimeMillis()
-                    val elapsed = now - speedMeasureStartTime
-                    if (elapsed >= 1000L) {
-                        currentSpeed = (bytesReadSinceMeasure * 1000L) / elapsed
-                        speedMeasureStartTime = now
-                        bytesReadSinceMeasure = 0L
-                    }
-
-                    val percent = if (totalBytes > 0) ((currentDownloaded * 100) / totalBytes).toInt().coerceIn(0, 99) else 0
-                    val remainingBytes = (totalBytes - currentDownloaded).coerceAtLeast(0L)
-                    val eta = if (currentSpeed > 0) remainingBytes / currentSpeed else 0L
-
-                    _progressFlow.value = _progressFlow.value.copy(
-                        downloadedBytes = currentDownloaded,
-                        totalBytes = totalBytes,
-                        progressPercent = percent,
-                        speedBytesPerSec = currentSpeed,
-                        etaSeconds = eta,
-                        isWifi = isConnectedToWifi()
-                    )
-                }
-
-                raf.close()
-                inputStream.close()
-                connection.disconnect()
 
                 // 5. 다운로드 완료 후 무결성 검증 (GGUF 헤더 + SHA-256)
                 _progressFlow.value = _progressFlow.value.copy(

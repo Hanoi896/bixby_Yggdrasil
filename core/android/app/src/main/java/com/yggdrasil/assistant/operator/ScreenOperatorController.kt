@@ -125,18 +125,34 @@ class ScreenOperatorController(
         }
     }
 
+    private fun clampToSafeArea(x: Float, y: Float): android.graphics.PointF {
+        val dm = context.resources.displayMetrics
+        val screenW = dm.widthPixels.toFloat()
+        val screenH = dm.heightPixels.toFloat()
+
+        // 상단 상태바(약 48dp) 및 하단 내비게이션 제스처 바(약 48dp) 시스템 바 안전 마진
+        val topInset = 48f * dm.density
+        val bottomInset = screenH - (48f * dm.density)
+        val horizontalMargin = 8f * dm.density
+
+        val safeX = x.coerceIn(horizontalMargin, screenW - horizontalMargin)
+        val safeY = y.coerceIn(topInset, bottomInset)
+        return android.graphics.PointF(safeX, safeY)
+    }
+
     private fun executeTap(
         service: YggdrasilAccessibilityService,
         targetText: String?,
         coordinates: Point?
     ): ExecutionResult {
-        // 1. 명시적 좌표가 전달된 경우
+        // 1. 명시적 좌표가 전달된 경우 (시스템 바 안전 영역 클램핑)
         if (coordinates != null) {
+            val safePoint = clampToSafeArea(coordinates.x.toFloat(), coordinates.y.toFloat())
             val latch = java.util.concurrent.CountDownLatch(1)
             var isSuccess = false
             registerLatch(latch)
             try {
-                service.tap(coordinates.x.toFloat(), coordinates.y.toFloat()) { success ->
+                service.tap(safePoint.x, safePoint.y) { success ->
                     isSuccess = success
                     latch.countDown()
                 }
@@ -147,7 +163,7 @@ class ScreenOperatorController(
             if (isInterrupted.get() || safetyGuardrail.isEmergencyStopped()) {
                 return ExecutionResult(false, "사용자 터치로 인해 탭 조작이 긴급 중단되었습니다.")
             }
-            return ExecutionResult(isSuccess, "좌표 (${coordinates.x}, ${coordinates.y}) 탭 완료")
+            return ExecutionResult(isSuccess, "좌표 (${safePoint.x.toInt()}, ${safePoint.y.toInt()}) 탭 완료")
         }
 
         if (targetText.isNullOrBlank()) {

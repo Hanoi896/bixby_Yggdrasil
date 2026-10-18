@@ -211,7 +211,7 @@ fun MonoHomeTab(personaManager: UserPersonaManager) {
         val llmService = remember { com.yggdrasil.assistant.llm.LocalLlmService.getInstance() }
         val isLoaded = llmService?.isModelLoaded() ?: false
         val backendName = remember(isLoaded) { llmService?.getActiveBackendName() ?: "미탑재 / 언로드 상태" }
-        val isBreakGlass = remember { com.yggdrasil.assistant.security.BreakGlassSecurityManager.isBreakGlassActive() }
+        val isBreakGlass = remember { com.yggdrasil.assistant.security.BreakGlassSecurityManager.getInstance(context).getSecurityStatus().isBreakGlassActive }
 
         Card(
             shape = RoundedCornerShape(12.dp),
@@ -248,7 +248,7 @@ fun MonoStatusRow(label: String, value: String) {
 @Composable
 fun MonoArchiveTab(vaultManager: AppStorageVaultManager) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var recentMemories by remember { mutableStateOf<List<com.yggdrasil.assistant.rag.MemoryRecord>>(emptyList()) }
+    var recentMemories by remember { mutableStateOf<List<com.yggdrasil.assistant.rag.MuninSqlCipherDatabase.MemoryRecord>>(emptyList()) }
     var vaultFiles by remember { mutableStateOf<List<java.io.File>>(emptyList()) }
 
     LaunchedEffect(Unit) {
@@ -256,7 +256,7 @@ fun MonoArchiveTab(vaultManager: AppStorageVaultManager) {
             try {
                 val munin = com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context)
                 val memories = munin.loadRecentDialogues(15)
-                val files = vaultManager.getVaultDirectory().listFiles()?.toList() ?: emptyList()
+                val files = vaultManager.vaultDir.listFiles()?.toList() ?: emptyList()
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     recentMemories = memories
                     vaultFiles = files
@@ -312,7 +312,7 @@ fun MonoArchiveTab(vaultManager: AppStorageVaultManager) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(mem.content.take(120), color = Color(0xFFDDDDDD), fontSize = 12.sp, maxLines = 3)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.KOREA).format(java.util.Date(mem.timestamp)), color = Color(0xFF666666), fontSize = 10.sp)
+                        Text(mem.timestamp, color = Color(0xFF666666), fontSize = 10.sp)
                     }
                 }
             }

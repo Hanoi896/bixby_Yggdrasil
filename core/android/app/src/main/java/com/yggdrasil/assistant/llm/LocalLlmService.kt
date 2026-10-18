@@ -503,10 +503,6 @@ class LocalLlmService : Service() {
                 sessionHistory.addAll(sub)
             }
         }
-    }
-
-    override fun onTrimMemory(level: Int) {
-        super.onTrimMemory(level)
         if (level >= TRIM_MEMORY_RUNNING_CRITICAL || level >= TRIM_MEMORY_BACKGROUND) {
             // 2초 딜레이의 완전 언로드 대신, mmap 가중치 보존 상태에서 KV 캐시를 즉시 비워 LMK SIGKILL 방어
             trimMemoryNative()

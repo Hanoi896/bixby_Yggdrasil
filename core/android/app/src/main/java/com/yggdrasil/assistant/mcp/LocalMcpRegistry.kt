@@ -77,12 +77,13 @@ class LocalMcpRegistry private constructor(private val context: Context) {
                         val title = args["title"] as? String ?: "새 일정"
                         val timeStr = args["time"] as? String ?: ""
                         val now = System.currentTimeMillis()
-                        val success = calendarManager.addCalendarEvent(
+                        val eventId = calendarManager.addCalendarEvent(
                             title = title,
                             description = "이그드라실 온디바이스 MCP 등록 일정",
-                            startTimeMs = now + 3600_000L,
-                            endTimeMs = now + 7200_000L
+                            startTimeMillis = now + 3600_000L,
+                            endTimeMillis = now + 7200_000L
                         )
+                        val success = eventId > 0
                         McpResult(success, if (success) "캘린더에 '$title' 일정을 정상 등록했습니다." else "캘린더 일정 등록 실패 (권한 필요)")
                     } else {
                         val events = calendarManager.getTodayEvents()
@@ -112,10 +113,11 @@ class LocalMcpRegistry private constructor(private val context: Context) {
                     val content = args["content"] as? String ?: ""
                     if (action == "save") {
                         if (content.isBlank()) return@withContext McpResult(false, "저장할 메모 내용이 비어있습니다.")
-                        val success = ragManager.recordMemory(content, "MEMO")
+                        val memId = ragManager.recordMemory(content, "MEMO")
+                        val success = memId.isNotBlank() && !memId.contains("paused")
                         McpResult(success, if (success) "암호화 볼트에 메모('$content')를 안전하게 보관했습니다." else "메모 저장 실패")
                     } else {
-                        val records = ragManager.searchRelevantMemories(content, 5)
+                        val records = ragManager.retrieveRelevantContext(content, 5)
                         val output = if (records.isNotEmpty()) {
                             "메모 검색 결과:\n" + records.joinToString("\n") { "• ${it.content}" }
                         } else {

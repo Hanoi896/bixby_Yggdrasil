@@ -74,14 +74,30 @@ class BiometricCredentialVault private constructor(private val context: Context)
     }
 
     /**
-     * 비밀번호/자격증명 하드웨어 복호화
+     * 비밀번호/자격증명 하드웨어 복호화 (하위 호환)
      */
     fun decryptCredential(payload: EncryptedPayload): String {
+        return useDecryptedCredential(payload) { chars ->
+            String(chars)
+        }
+    }
+
+    /**
+     * 금융/보안 업계 표준: 메모리 덤프 방어 제로라이즈(Zeroization) 복호화
+     * 사용 직후 임시 평문 바이트 및 캐릭터 버퍼를 '\0'로 완전 덮어써 잔류 차단
+     */
+    fun <R> useDecryptedCredential(payload: EncryptedPayload, block: (CharArray) -> R): R {
         val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
         val spec = GCMParameterSpec(GCM_TAG_LENGTH, payload.iv)
         cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), spec)
         val plainBytes = cipher.doFinal(payload.cipherText)
-        return String(plainBytes, Charsets.UTF_8)
+        val chars = Charsets.UTF_8.decode(java.nio.ByteBuffer.wrap(plainBytes)).array()
+        try {
+            return block(chars)
+        } finally {
+            java.util.Arrays.fill(plainBytes, 0.toByte())
+            java.util.Arrays.fill(chars, '\u0000')
+        }
     }
 
     data class EncryptedPayload(

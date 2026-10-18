@@ -116,4 +116,7 @@ dependencies {
     // Google ML Kit 온디바이스 Vision OCR (한국어 및 라틴어 지원)
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+
+    // Chrome Custom Tabs (OAuth 2.0 PKCE)
+    implementation("androidx.browser:browser:1.8.0")
 }

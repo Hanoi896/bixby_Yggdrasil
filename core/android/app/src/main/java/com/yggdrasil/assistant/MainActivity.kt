@@ -367,9 +367,22 @@ class MainActivity : ComponentActivity() {
         handleDeepLink(intent)
     }
 
+    private fun sanitizeDeepLinkQuery(rawQuery: String?): String? {
+        if (rawQuery.isNullOrBlank()) return null
+        val clean = rawQuery.trim().take(300) // 비정상적인 버퍼 오버플로우 장문 컷
+
+        // 위험 프롬프트 주입 키워드 감지 시 무효화
+        val dangerousKeywords = listOf("ignore all previous instructions", "시스템 초기화", "단말 포맷", "su root", "chmod 777")
+        if (dangerousKeywords.any { clean.lowercase().contains(it) }) {
+            android.util.Log.e("MainActivity", "🚨 악의적 프롬프트 주입 시도 감지 및 차단: $clean")
+            return null
+        }
+        return clean
+    }
+
     /**
      * 빅스비 캡슐에서 전달된 app-launch 딥링크 파싱 및 탭 자동 라우팅
-     * - yggdrasil://action?name=...&payload=... -> 자율 액션/플랜 1-Shot 직결 실행
+     * - yggdrasil://action?name=...&payload=... -> 자율 액션/플랜 검증 후 실행
      * - yggdrasil://chat?query=...  -> [대화] 탭 (0번) 및 자동 발화 전송
      * - yggdrasil://status          -> [상태] 탭 (1번) 판테온/세계수 관제 화면
      * - yggdrasil://archive?query=  -> [보관소] 탭 (2번) SQLCipher 기억 아카이브
@@ -383,21 +396,16 @@ class MainActivity : ComponentActivity() {
             when (host) {
                 "action" -> {
                     pendingTargetTab.value = 0
-                    val actionName = uri.getQueryParameter("name") ?: uri.getQueryParameter("type") ?: "execute"
-                    val payload = uri.getQueryParameter("payload") ?: uri.getQueryParameter("command") ?: ""
+                    val actionName = sanitizeDeepLinkQuery(uri.getQueryParameter("name") ?: uri.getQueryParameter("type")) ?: "execute"
+                    val payload = sanitizeDeepLinkQuery(uri.getQueryParameter("payload") ?: uri.getQueryParameter("command")) ?: ""
                     android.util.Log.i("MainActivity", "빅스비 Native Action 수신: $actionName, payload: $payload")
                     val fullCommand = if (payload.isNotBlank()) "$actionName $payload" else actionName
                     pendingDeepLinkQuery.value = fullCommand
-                    speakFeedback("$actionName 작업을 시작합니다.")
-                    lifecycleScope.launch(Dispatchers.Default) {
-                        val operator = com.yggdrasil.assistant.operator.AutoOperatorManager.getInstance(this@MainActivity)
-                        val report = operator.executeNaturalCommand(fullCommand)
-                        speakFeedback(report.message)
-                    }
+                    speakFeedback("$actionName 작업을 검토합니다.")
                 }
                 "chat" -> {
                     pendingTargetTab.value = 0
-                    val query = uri.getQueryParameter("query")?.trim()
+                    val query = sanitizeDeepLinkQuery(uri.getQueryParameter("query"))
                     if (!query.isNullOrEmpty()) {
                         pendingDeepLinkQuery.value = query
                     }

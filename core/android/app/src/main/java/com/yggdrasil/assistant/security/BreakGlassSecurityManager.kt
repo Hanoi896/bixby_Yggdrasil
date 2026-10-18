@@ -93,10 +93,26 @@ class BreakGlassSecurityManager(private val context: Context) {
         return triggerBreakGlass(reason)
     }
 
+    @Volatile
+    private var failedAttempts = 0
+    @Volatile
+    private var lockoutUntilMs = 0L
+
+    fun getRemainingLockoutSeconds(): Long {
+        val remaining = (lockoutUntilMs - System.currentTimeMillis()) / 1000L
+        return if (remaining > 0) remaining else 0L
+    }
+
     /**
-     * 비상 모드 해제: Salted SHA-256 타이밍 안전(Constant-Time) 대조 검증
+     * 비상 모드 해제: Salted SHA-256 타이밍 안전(Constant-Time) 대조 검증 및 브루트포스 락아웃
      */
     fun releaseBreakGlass(passphrase: String): Boolean {
+        val now = System.currentTimeMillis()
+        if (now < lockoutUntilMs) {
+            Log.w(TAG, "❌ [인증 잠금 상태] 브루트포스 방어 락아웃 해제까지 ${(lockoutUntilMs - now) / 1000}초 대기 필요")
+            return false
+        }
+
         if (passphrase.isBlank()) {
             return false
         }
@@ -113,6 +129,8 @@ class BreakGlassSecurityManager(private val context: Context) {
         )
 
         if (isMatch) {
+            failedAttempts = 0
+            lockoutUntilMs = 0L
             isBreakGlassActive = false
             lockdownTimestamp = null
             lockdownReason = null
@@ -120,7 +138,13 @@ class BreakGlassSecurityManager(private val context: Context) {
             return true
         }
 
-        Log.e(TAG, "❌ [BREAK-GLASS 해제 실패] 올바르지 않은 마스터 비밀번호 입력")
+        failedAttempts++
+        if (failedAttempts >= 5) {
+            lockoutUntilMs = now + 30_000L // 5회 실패 시 30초 하드웨어 락아웃
+            Log.e(TAG, "🚨 [브루트포스 차단] 연속 5회 인증 실패 -> 30초간 비상 해제 잠금(Rate-Limit Lockout)")
+        } else {
+            Log.e(TAG, "❌ [BREAK-GLASS 해제 실패] 올바르지 않은 마스터 비밀번호 입력 (실패 횟수: $failedAttempts/5)")
+        }
         return false
     }
 

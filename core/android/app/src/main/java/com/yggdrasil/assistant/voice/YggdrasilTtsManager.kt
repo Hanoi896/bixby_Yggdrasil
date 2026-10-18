@@ -38,6 +38,8 @@ class YggdrasilTtsManager private constructor(private val context: Context) {
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private var focusRequest: AudioFocusRequest? = null
 
+    private val callbacks = java.util.concurrent.ConcurrentHashMap<String, () -> Unit>()
+
     init {
         initializeTts()
     }
@@ -52,7 +54,7 @@ class YggdrasilTtsManager private constructor(private val context: Context) {
                 }
 
                 val playbackAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
                 tts?.setAudioAttributes(playbackAttributes)
@@ -68,11 +70,17 @@ class YggdrasilTtsManager private constructor(private val context: Context) {
                     override fun onDone(utteranceId: String?) {
                         Log.i(TAG, "🔊 [TTS 발화 완료]: $utteranceId")
                         abandonAudioFocusSafely()
+                        if (utteranceId != null) {
+                            callbacks.remove(utteranceId)?.invoke()
+                        }
                     }
 
                     override fun onError(utteranceId: String?) {
                         Log.w(TAG, "TTS 발화 오류: $utteranceId")
                         abandonAudioFocusSafely()
+                        if (utteranceId != null) {
+                            callbacks.remove(utteranceId)?.invoke()
+                        }
                     }
                 })
 
@@ -98,7 +106,10 @@ class YggdrasilTtsManager private constructor(private val context: Context) {
     @Synchronized
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         val clean = sanitizeForSpeech(text)
-        if (clean.isBlank()) return
+        if (clean.isBlank()) {
+            onDone?.invoke()
+            return
+        }
 
         Log.i(TAG, "🔊 [speak 호출]: '$clean' (ready=$isReady)")
 
@@ -114,6 +125,9 @@ class YggdrasilTtsManager private constructor(private val context: Context) {
             putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
         }
         val utteranceId = "yggdrasil_${System.currentTimeMillis()}"
+        if (onDone != null) {
+            callbacks[utteranceId] = onDone
+        }
         tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }
 

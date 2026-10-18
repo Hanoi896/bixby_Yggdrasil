@@ -12,6 +12,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.yggdrasil.assistant.integration.CalendarAndContactsManager
 import com.yggdrasil.assistant.persona.UserPersonaManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * [SystemEventReceiver]

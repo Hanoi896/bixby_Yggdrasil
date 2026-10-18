@@ -730,6 +730,10 @@ std::string ExaoneRuntime::getActiveBackendName() const {
   return pImpl->activeBackend;
 }
 
+void ExaoneRuntime::trimMemoryPages() {
+  pImpl->trimMemoryPages();
+}
+
 void ExaoneRuntime::clearKvCache() {
   pImpl->clearKvCache();
 }

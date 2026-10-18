@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -214,7 +215,7 @@ fun ChatScreen(
                     navigationIcon = {
                         IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Default.Menu,
+                                imageVector = Icons.Filled.Menu,
                                 contentDescription = "히스토리 서랍",
                                 tint = Color.White
                             )

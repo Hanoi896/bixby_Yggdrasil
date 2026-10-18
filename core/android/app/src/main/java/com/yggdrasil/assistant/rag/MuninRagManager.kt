@@ -1,6 +1,9 @@
 package com.yggdrasil.assistant.rag
 
 import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * MuninRagManager
@@ -10,7 +13,7 @@ import android.content.Context
  * 2. 0.1초 고속 RAG 검색: 사용자 질문과 가장 관련 있는 과거 일정, 대화, 개인화 메모를 검색하여 LLM 시스템 프롬프트에 자동 주입
  * 3. 자가 학습 및 지속적 개선 루프: 사용자의 반응 및 선호도를 피드백으로 축적하여 향후 프롬프트 및 의사결정을 지속적으로 개선
  */
-class MuninRagManager(context: Context) {
+class MuninRagManager(private val context: Context) {
 
     companion object {
         @Volatile
@@ -31,15 +34,19 @@ class MuninRagManager(context: Context) {
     // 자체 개선(Self-Improvement)을 위한 사용자 선호도 및 성공 지표 캐시
     private var autonomousFeedbackScore: Float = 1.0f
 
-    // 사용자 개인정보 보호를 위한 학습/기억 저장 일시 정지 스위치 (SharedPreferences 영구 저장)
+    // 사용자 개인정보 보호를 위한 학습/기억 저장 일시 정지 스위치 (인메모리 캐시 & 비동기 영구 저장)
     @Volatile
     private var isLearningPaused: Boolean = prefs.getBoolean("learning_paused", false)
+
+    private val _isLearningPausedFlow = MutableStateFlow(isLearningPaused)
+    val isLearningPausedFlow: StateFlow<Boolean> = _isLearningPausedFlow.asStateFlow()
 
     /**
      * 학습 및 대화 자동 저장 일시 정지/재개 토글 스위치 (학습 잠시 끄는 버튼)
      */
     fun setLearningPaused(paused: Boolean) {
         this.isLearningPaused = paused
+        this._isLearningPausedFlow.value = paused
         prefs.edit().putBoolean("learning_paused", paused).apply()
     }
 

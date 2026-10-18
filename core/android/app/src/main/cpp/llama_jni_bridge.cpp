@@ -43,6 +43,7 @@ struct JNIEnv {
 #include <string>
 #include <memory>
 #include <cstdio>
+#include <chrono>
 #if defined(__ANDROID__) || defined(ANDROID)
 #include <android/log.h>
 #define LOG_TAG "YggdrasilJni"
@@ -311,18 +312,38 @@ Java_com_yggdrasil_assistant_llm_LocalLlmService_generateChatStreamNative(
 
     std::string response;
     try {
-        response = g_runtime->generateStream(messages, [&](const std::string& token) {
-            if (callback_ != nullptr && onTokenMethod != nullptr && !token.empty()) {
-                jstring tokenStr = env->NewStringUTF(token.c_str());
-                if (tokenStr != nullptr) {
-                    env->CallVoidMethod(callback_, onTokenMethod, tokenStr);
-                    env->DeleteLocalRef(tokenStr);
-                    if (env->ExceptionCheck()) {
-                        env->ExceptionClear();
-                    }
+        std::string chunkBuffer;
+        auto lastFlushTime = std::chrono::steady_clock::now();
+
+        auto flushChunk = [&]() {
+            if (chunkBuffer.empty() || callback_ == nullptr || onTokenMethod == nullptr) return;
+            jstring tokenStr = env->NewStringUTF(chunkBuffer.c_str());
+            if (tokenStr != nullptr) {
+                env->CallVoidMethod(callback_, onTokenMethod, tokenStr);
+                env->DeleteLocalRef(tokenStr);
+                if (env->ExceptionCheck()) {
+                    env->ExceptionClear();
                 }
             }
+            chunkBuffer.clear();
+            lastFlushTime = std::chrono::steady_clock::now();
+        };
+
+        response = g_runtime->generateStream(messages, [&](const std::string& token) {
+            if (token.empty()) return;
+            chunkBuffer += token;
+
+            auto now = std::chrono::steady_clock::now();
+            auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFlushTime).count();
+
+            // 업계 표준 배치 플러시 조건: 30ms 경과 or 16글자 누적 or 개행문자 포함
+            if (elapsedMs >= 30 || chunkBuffer.size() >= 16 || token.find('\n') != std::string::npos) {
+                flushChunk();
+            }
         });
+
+        // 잔여 청크 버퍼 최종 플러시
+        flushChunk();
     } catch (const std::exception &e) {
         LOGE("generateChatStreamNative C++ 예외 발생: %s", e.what());
         return env->NewStringUTF("Error: Native streaming inference failed");

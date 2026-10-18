@@ -44,31 +44,50 @@ class SleipnirInboundWorker private constructor(private val context: Context) {
         private set
 
     /**
-     * Long-Polling 백그라운드 수신 워커 시작
+     * FCM 푸시 또는 온디맨드 트리거용 업계 표준 1-Shot Race-to-Sleep 동기화
+     * 단말기를 상시 깨워두지 않고 푸시 신호 수신 시 1회 고속 동기화 후 즉시 슬립 복귀
+     */
+    suspend fun executeOneShotSync(): Int = withContext(Dispatchers.IO) {
+        val (token, authorizedChatId) = messengerClient.getTelegramConfig()
+        if (token.isNullOrBlank() || authorizedChatId.isNullOrBlank()) {
+            return@withContext 0
+        }
+        return@withContext pollTelegramUpdates(token, authorizedChatId)
+    }
+
+    /**
+     * Long-Polling 백그라운드 수신 워커 시작 (적응형 Race-to-Sleep 백오프 탑재)
      */
     fun startListening(scope: CoroutineScope = CoroutineScope(Dispatchers.IO)) {
         if (isRunning) return
         isRunning = true
 
         workerJob = scope.launch {
-            Log.i(TAG, "📡 텔레그램 인바운드 Long-Polling 수신 워커 기동 시작")
+            Log.i(TAG, "📡 텔레그램 인바운드 Long-Polling 수신 워커 기동 (Race-to-Sleep 절전 스케줄러 적용)")
+            var idleBackoffMs = 1000L
 
             while (isActive && isRunning) {
                 val (token, authorizedChatId) = messengerClient.getTelegramConfig()
 
                 if (token.isNullOrBlank() || authorizedChatId.isNullOrBlank()) {
-                    // 토큰 또는 채팅방 ID가 설정되지 않은 경우 10초 대기 후 재확인
                     delay(10000L)
                     continue
                 }
 
                 try {
-                    pollTelegramUpdates(token, authorizedChatId)
+                    val processedCount = pollTelegramUpdates(token, authorizedChatId)
+                    if (processedCount > 0) {
+                        idleBackoffMs = 1000L // 메시지 유입 시 고속 응답 유지
+                    } else {
+                        // 신규 메시지 부재 시 점진적 백오프로 Doze 모드 방어 (최대 15초 슬립)
+                        idleBackoffMs = (idleBackoffMs * 1.5).toLong().coerceAtMost(15000L)
+                    }
+                    delay(idleBackoffMs)
                 } catch (e: CancellationException) {
                     break
                 } catch (e: Exception) {
                     Log.w(TAG, "텔레그램 수신 폴링 중 일시적 네트워크 지연: ${e.message}")
-                    delay(5000L) // 오류 시 백오프 대기
+                    delay(5000L)
                 }
             }
 
@@ -88,7 +107,7 @@ class SleipnirInboundWorker private constructor(private val context: Context) {
     /**
      * Telegram getUpdates API Long-Polling 단일 사이클
      */
-    private suspend fun pollTelegramUpdates(botToken: String, authorizedChatId: String) = withContext(Dispatchers.IO) {
+    private suspend fun pollTelegramUpdates(botToken: String, authorizedChatId: String): Int = withContext(Dispatchers.IO) {
         val offsetParam = if (lastUpdateId > 0) "&offset=${lastUpdateId + 1}" else ""
         val urlString = "https://api.telegram.org/bot$botToken/getUpdates?timeout=20$offsetParam"
 
@@ -98,12 +117,13 @@ class SleipnirInboundWorker private constructor(private val context: Context) {
         conn.readTimeout = 35000
         conn.requestMethod = "GET"
 
+        var processedCount = 0
         val responseCode = conn.responseCode
         if (responseCode == 200) {
             val responseText = conn.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(responseText)
             if (json.optBoolean("ok", false)) {
-                val resultArray = json.optJSONArray("result") ?: return@withContext
+                val resultArray = json.optJSONArray("result") ?: return@withContext 0
                 for (i in 0 until resultArray.length()) {
                     val updateObj = resultArray.getJSONObject(i)
                     val updateId = updateObj.optLong("update_id", 0L)
@@ -124,6 +144,7 @@ class SleipnirInboundWorker private constructor(private val context: Context) {
 
                     if (incomingText.isNotBlank()) {
                         processIncomingCommand(incomingText, authorizedChatId)
+                        processedCount++
                     }
                 }
             }
@@ -131,6 +152,7 @@ class SleipnirInboundWorker private constructor(private val context: Context) {
             Log.w(TAG, "Telegram getUpdates 비정상 응답: HTTP $responseCode")
             delay(5000L)
         }
+        return@withContext processedCount
     }
 
     /**

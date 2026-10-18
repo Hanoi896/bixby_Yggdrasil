@@ -34,7 +34,13 @@ class CalendarAndContactsManager(private val context: Context) {
         val startTimeMillis: Long,
         val endTimeMillis: Long,
         val location: String
-    )
+    ) {
+        val timeString: String
+            get() {
+                val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.KOREA)
+                return "${sdf.format(java.util.Date(startTimeMillis))}~${sdf.format(java.util.Date(endTimeMillis))}"
+            }
+    }
 
     data class ContactInfo(
         val name: String,
@@ -158,6 +164,16 @@ class CalendarAndContactsManager(private val context: Context) {
         } catch (e: Exception) {
             -1L
         }
+    }
+
+    fun addCalendarEvent(
+        title: String,
+        startTimeMillis: Long,
+        endTimeMillis: Long,
+        location: String = "",
+        description: String = ""
+    ): Long {
+        return insertEvent(title, startTimeMillis, endTimeMillis, location, description)
     }
 
     // ==========================================
