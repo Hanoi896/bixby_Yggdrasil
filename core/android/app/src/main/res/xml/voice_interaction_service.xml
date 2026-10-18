@@ -2,6 +2,8 @@
 <voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:sessionService="com.yggdrasil.assistant.voice.YggdrasilVoiceSessionService"
     android:recognitionService="com.yggdrasil.assistant.voice.YggdrasilVoiceRecognitionService"
+    android:settingsActivity="com.yggdrasil.assistant.MainActivity"
     android:supportsAssist="true"
-    android:supportsLocalInteraction="true" />
+    android:supportsLocalInteraction="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="true" />
 

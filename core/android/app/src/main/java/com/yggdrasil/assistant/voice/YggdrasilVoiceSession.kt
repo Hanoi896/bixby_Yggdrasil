@@ -638,21 +638,52 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                     return@launch
                 }
 
+                YggdrasilIntentPlanner.ActionIntent.CLICK_ELEMENT -> {
+                    withContext(Dispatchers.Main) { hide() }
+                    delay(200)
+                    val target = plan.target.ifBlank { plan.content }
+                    val report = AutoOperatorManager.getInstance(context).executeClickOnTarget(target)
+                    if (!report.success) {
+                        ttsManager.speak("화면에서 '${target}' 요소를 찾지 못했습니다.")
+                    }
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.INPUT_TEXT -> {
+                    withContext(Dispatchers.Main) { hide() }
+                    delay(200)
+                    val report = AutoOperatorManager.getInstance(context).executeTextInput(plan.content)
+                    if (!report.success) {
+                        ttsManager.speak("텍스트 입력창을 찾지 못했습니다.")
+                    }
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.SYSTEM_NAV -> {
+                    withContext(Dispatchers.Main) { hide() }
+                    delay(200)
+                    AutoOperatorManager.getInstance(context).executeSystemNav(plan.content)
+                    return@launch
+                }
+
+                YggdrasilIntentPlanner.ActionIntent.SCROLL -> {
+                    withContext(Dispatchers.Main) { hide() }
+                    delay(200)
+                    AutoOperatorManager.getInstance(context).executeScroll(plan.content)
+                    return@launch
+                }
+
                 YggdrasilIntentPlanner.ActionIntent.SEND_MESSAGE -> {
                     withContext(Dispatchers.Main) { hide() }
                     delay(300)
-                    // 사용자 선호 앱 오버라이드 확인 (예: 엄마한테 보낼 땐 문자 선호)
                     val preferredApp = UserFeedbackLearner.getInstance(context).getPreferredApp(plan.target)
-                    val actualCommand = if (preferredApp != null && !finalCommand.contains(preferredApp)) {
-                        finalCommand.replace("카카오톡", preferredApp).replace("메시지", preferredApp)
-                    } else {
-                        finalCommand
-                    }
-
-                    val report = AutoOperatorManager.getInstance(context).executeNaturalCommand(actualCommand)
+                    val app = preferredApp ?: plan.appName.ifBlank { "카카오톡" }
+                    val report = AutoOperatorManager.getInstance(context).executeSendMessageDirect(app, plan.target, plan.content)
                     if (report.success) {
-                        UserFeedbackLearner.getInstance(context).recordExecutedAction(plan.intent, preferredApp ?: plan.appName, plan.target, plan.content)
+                        UserFeedbackLearner.getInstance(context).recordExecutedAction(plan.intent, app, plan.target, plan.content)
                         ttsManager.speak("${plan.target}님께 전송을 완료했습니다.")
+                    } else {
+                        ttsManager.speak(report.message)
                     }
                     return@launch
                 }
@@ -715,12 +746,10 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                     return@launch
                 }
 
-                YggdrasilIntentPlanner.ActionIntent.CHAINED_APP_ACTION,
-                YggdrasilIntentPlanner.ActionIntent.SYSTEM_NAV,
-                YggdrasilIntentPlanner.ActionIntent.SCROLL -> {
+                YggdrasilIntentPlanner.ActionIntent.CHAINED_APP_ACTION -> {
                     withContext(Dispatchers.Main) { hide() }
                     delay(300)
-                    AutoOperatorManager.getInstance(context).executeNaturalCommand(finalCommand)
+                    AutoOperatorManager.getInstance(context).executeAppTask(plan.appName, plan.content)
                     return@launch
                 }
 

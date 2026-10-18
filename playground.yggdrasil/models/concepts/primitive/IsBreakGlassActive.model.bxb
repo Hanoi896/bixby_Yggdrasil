@@ -1,3 +1,0 @@
-boolean (IsBreakGlassActive) {
-  description (비상 해제 모드 가동 여부 플래그)
-}

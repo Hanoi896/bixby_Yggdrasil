@@ -1,3 +1,0 @@
-text (TierStatus) {
-  description (에이전트의 현재 가동 상태)
-}

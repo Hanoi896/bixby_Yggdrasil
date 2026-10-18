@@ -168,9 +168,21 @@ class FactContextBuilder private constructor(private val context: Context) {
             }
 
             QueryIntent.GENERAL_CHAT -> {
+                val toolPrompt = try {
+                    com.yggdrasil.assistant.mcp.DynamicToolPruningFilter.pruneAndBuildToolPrompt(
+                        userQuery = userQuery,
+                        registry = com.yggdrasil.assistant.mcp.LocalMcpRegistry.getInstance(context)
+                    )
+                } catch (_: Exception) { "" }
+
+                val basePrompt = "당신은 갤럭시 S26 울트라 100% 온디바이스 개인 비서 Yggdrasil입니다. 사용자의 질문에 친절하고 정직하게 답변하되, 모르는 정보나 없는 사실은 절대 추측하지 말고 솔직하게 모른다고 답하십시오."
+                val fullSystemPrompt = if (toolPrompt.isNotBlank()) {
+                    "$basePrompt\n\n$toolPrompt"
+                } else basePrompt
+
                 FactInjectionResult(
                     intent = intent,
-                    systemPrompt = "당신은 갤럭시 S26 울트라 100% 온디바이스 개인 비서 Yggdrasil입니다. 사용자의 질문에 친절하고 정직하게 답변하되, 모르는 정보나 없는 사실은 절대 추측하지 말고 솔직하게 모른다고 답하십시오.",
+                    systemPrompt = fullSystemPrompt,
                     enrichedUserPrompt = userQuery
                 )
             }

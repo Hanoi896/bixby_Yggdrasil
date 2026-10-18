@@ -1,3 +1,0 @@
-boolean (IsLearningBlocked) {
-  description (AI 학습 차단 모드 활성화 여부 플래그)
-}

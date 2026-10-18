@@ -1,4 +1,0 @@
-dialog (Result) {
-  match: AppLaunchResult (this)
-  template ("#{value(this.speechResponse)}")
-}

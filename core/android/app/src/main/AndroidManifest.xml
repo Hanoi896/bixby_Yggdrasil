@@ -76,6 +76,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- 안드로이드 순정 시스템 어시스턴트 호출 (홈버튼 롱프레스 / 전원키 어시스트 인텐트 수신) -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
             <!-- 빅스비 캡슐 앱 실행 및 딥링크 핸들러 (yggdrasil://action, chat, launch, status, archive, settings) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -195,6 +205,25 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
+
+        <!-- 안드로이드 시스템 공식 자동 로그인 AutofillService -->
+        <service
+            android:name=".security.YggdrasilAutofillService"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+        </service>
+
+        <!-- 갤럭시 버즈 및 블루투스 이어폰 미디어 버튼 / 헤드셋 훅 수신 리시버 -->
+        <receiver
+            android:name=".voice.BudsMediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 
         <!-- 파일 공유 안전 가드레일 (FileUriExposedException 원천 방어) -->
         <provider

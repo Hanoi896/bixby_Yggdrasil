@@ -1,3 +1,0 @@
-text (SignedHash) {
-  description (Ed25519 전자서명된 해시 증빙)
-}

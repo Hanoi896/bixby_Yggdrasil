@@ -1,6 +1,7 @@
 package com.yggdrasil.assistant.ui
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -160,6 +161,71 @@ fun SettingsScreen(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // [카드 0] 단독 Android AI 어시스턴트 일원화 (Google Gemini / ChatGPT 방식)
+            val isDefaultAssistant = remember(permissions) {
+                permissionManager.isDefaultAssistantServiceEnabled()
+            }
+            MonoCard(title = "기본 디지털 어시스턴트 단일화") {
+                Text(
+                    "구글 제미나이나 ChatGPT처럼 안드로이드 순정 AI 비서(VoiceInteractionService)로 일원화되어 작동합니다.",
+                    color = Color(0xFF888888),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isDefaultAssistant) "● 기본 어시스턴트로 활성화됨" else "○ 기본 어시스턴트 미지정",
+                            color = if (isDefaultAssistant) Color(0xFF4CAF50) else Color(0xFFFFD700),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (isDefaultAssistant) 
+                                "홈 버튼 길게 누르기, 측면 전원 키, 하단 스와이프 시 이그드라실이 즉시 기동됩니다." 
+                            else 
+                                "원클릭 설정으로 이그드라실을 기본 비서로 등록하세요.",
+                            color = Color(0xFF777777),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White, RoundedCornerShape(6.dp))
+                            .clickable {
+                                val intent = Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text(
+                            "One UI 설정",
+                            color = Color.Black,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "💡 팁: 갤럭시 설정 > 유용한 기능 > 측면 버튼에서 '길게 누르기'를 기본 어시스턴트 호출로 연결할 수 있습니다.",
+                    color = Color(0xFF555555),
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp
+                )
+            }
+
             // [카드 1] 필수 시스템 권한 상태 (핵심 신규 추가)
             MonoCard(title = "스마트폰 필수 권한 상태") {
                 Text(

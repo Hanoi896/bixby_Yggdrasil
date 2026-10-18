@@ -1,4 +1,0 @@
-dialog (Result) {
-  match: MemoryQueryResult (this)
-  template ("#{value(this.summaryMessage)}")
-}

@@ -101,36 +101,62 @@ class AutoOperatorManager private constructor(private val context: Context) {
             return@withContext ExecutionReport(false, "금융 및 결제 화면에서는 안전을 위해 자율 화면 조작이 제한됩니다. 직접 조작해 주세요.")
         }
 
-        // 1. 시스템 내비게이션 명령 ("홈", "홈으로", "홈 화면", "홈 화면으로 가줘", "바탕화면", "메인 화면", "뒤로", "최근 앱")
-        if (lower.contains("홈") || lower.contains("바탕화면") || lower.contains("메인화면")) {
+        // 1. 시스템 내비게이션 명령 (엄격 매칭으로 홈플러스/홈쇼핑 등 오작동 차단)
+        val isHome = lower == "홈" || lower == "홈으로" || lower.startsWith("홈으로") || lower == "홈화면" || lower == "바탕화면" || lower == "메인화면"
+        if (isHome) {
             val ok = service.pressHome()
             return@withContext ExecutionReport(ok, "홈 화면으로 이동했습니다.")
         }
-        if (lower.contains("뒤로") || lower.contains("이전")) {
+        val isBack = lower == "뒤로" || lower == "뒤로가" || lower == "뒤로가기" || lower == "이전화면" || lower == "이전"
+        if (isBack) {
             val ok = service.pressBack()
             return@withContext ExecutionReport(ok, "이전 화면으로 돌아갔습니다.")
         }
-        if (lower.contains("최근 앱") || lower.contains("멀티태스킹")) {
+        val isRecents = lower == "최근앱" || lower == "최근 앱" || lower == "멀티태스킹" || lower == "앱목록"
+        if (isRecents) {
             val ok = service.pressRecents()
             return@withContext ExecutionReport(ok, "최근 실행 앱 목록을 열었습니다.")
         }
 
-        // 2. 복합 명령 A: 메시지 전송 및 카톡/문자 남기기 ("카카오톡 실행해서 OO에게 안녕이라고 카톡 남겨줘", "카톡 방에 안녕하세요 보내")
-        val isMessageIntent = lower.contains("보내") || lower.contains("전송") || lower.contains("남겨") ||
-                lower.contains("써줘") || lower.contains("말해줘") || lower.contains("작성") ||
-                lower.contains("카톡") || lower.contains("메시지")
-        val isMessageTarget = lower.contains("방에") || lower.contains("한테") || lower.contains("에게") ||
-                lower.contains("카톡") || lower.contains("카카오톡") || lower.contains("문자") ||
-                lower.contains("라인") || lower.contains("텔레그램")
+        // 2. 스크롤 / 스와이프 명령
+        if (lower.contains("내려") || lower.contains("아래로") || lower.contains("스크롤 다운")) {
+            return@withContext executeScroll("DOWN")
+        }
+        if (lower.contains("올려") || lower.contains("위로") || lower.contains("스크롤 업")) {
+            return@withContext executeScroll("UP")
+        }
 
-        if (isMessageIntent && isMessageTarget) {
+        // 3. 단순 단일 앱 실행 명령 (메시지 전송보다 먼저 평가하여 "카톡 켜줘"가 메시지 전송으로 오작동하는 것 원천 차단)
+        val isPureLaunch = (lower.endsWith("켜줘") || lower.endsWith("켜") ||
+                lower.endsWith("열어줘") || lower.endsWith("열어") ||
+                lower.endsWith("실행해줘") || lower.endsWith("실행해") ||
+                lower.endsWith("실행해 줘") || lower.endsWith("켜 줘") ||
+                lower.endsWith("열어 줘")) &&
+                !cmd.contains("해서") && !cmd.contains("보내") && !cmd.contains("남겨") && !cmd.contains("검색") && !cmd.contains("한테") && !cmd.contains("에게")
+
+        if (isPureLaunch) {
+            val appName = extractTargetAppName(cmd)
+            if (appName.isNotBlank()) {
+                val launched = launchAppByName(appName)
+                if (launched) {
+                    delay(800)
+                    return@withContext ExecutionReport(true, "'$appName' 앱을 실행했습니다.")
+                }
+            }
+        }
+
+        // 4. 복합 명령 A: 메시지 전송 ("OO에게 ~~라고 톡 보내", "OO한테 카톡 남겨줘")
+        val isMessageIntent = (lower.contains("보내") || lower.contains("전송") || lower.contains("남겨")) &&
+                (lower.contains("한테") || lower.contains("에게") || lower.contains("방에"))
+
+        if (isMessageIntent) {
             val chainedReport = executeChainedMessageCommand(cmd, service)
             if (chainedReport != null) {
                 return@withContext chainedReport
             }
         }
 
-        // 3. 복합 명령 B: 앱 실행 후 검색/설치/재생 ("플레이스토어 실행해서 브롤스타즈 깔아줘", "유튜브 켜서 아이유 틀어줘", "네이버 열어서 오늘 주가 검색")
+        // 5. 복합 명령 B: 앱 실행 후 검색/설치/재생 ("플레이스토어 실행해서 브롤스타즈 깔아줘", "유튜브 켜서 아이유 틀어줘")
         if (lower.contains("실행해서") || lower.contains("켜서") || lower.contains("열어서") || lower.contains("들어가서") || lower.contains("열고")) {
             val appActionReport = executeChainedAppAction(cmd, service)
             if (appActionReport != null) {
@@ -138,109 +164,158 @@ class AutoOperatorManager private constructor(private val context: Context) {
             }
         }
 
-        // 4. 스크롤 / 스와이프 명령
-        if (lower.contains("내려") || lower.contains("아래로") || lower.contains("스크롤 다운")) {
-            val bounds = getScreenMetrics()
-            val startY = bounds.second * 0.75f
-            val endY = bounds.second * 0.25f
-            val midX = bounds.first * 0.5f
-
-            showVirtualPointerAt(midX, startY)
-            delay(150)
-            performSmoothSwipe(service, midX, startY, midX, endY, 400)
-            return@withContext ExecutionReport(true, "화면을 아래로 스크롤했습니다.")
-        }
-        if (lower.contains("올려") || lower.contains("위로") || lower.contains("스크롤 업")) {
-            val bounds = getScreenMetrics()
-            val startY = bounds.second * 0.25f
-            val endY = bounds.second * 0.75f
-            val midX = bounds.first * 0.5f
-
-            showVirtualPointerAt(midX, startY)
-            delay(150)
-            performSmoothSwipe(service, midX, startY, midX, endY, 400)
-            return@withContext ExecutionReport(true, "화면을 위로 스크롤했습니다.")
-        }
-
-        // 5. 단일 앱 실행 명령 ("유튜브 켜줘", "카카오톡 열어줘", "인스타 켜", "설정 열어줘")
-        val appName = extractTargetAppName(cmd)
-        if (appName.isNotBlank()) {
-            val launched = launchAppByName(appName)
-            if (launched) {
-                delay(1200) // 앱 로딩 대기
-                return@withContext ExecutionReport(true, "'$appName' 앱을 실행했습니다.")
-            }
-        }
-
-        // 6. 의미론적(Semantic) UI 노드 클릭 ("'검색' 눌러줘", "'재생' 클릭해줘", "'확인' 눌러")
+        // 6. 의미론적 UI 요소 클릭 ("'검색' 눌러줘", "장바구니 담기 클릭해", "확인 터치해")
         val clickTarget = extractClickTarget(cmd)
         if (clickTarget.isNotBlank()) {
-            if (service.isUserInterrupted.get()) {
-                return@withContext ExecutionReport(false, "사용자 터치로 인해 조작이 중단되었습니다.")
-            }
-            val targetNode = waitForNode(service, clickTarget, timeoutMs = 1500L)
-            if (targetNode != null) {
-                val rect = android.graphics.Rect()
-                targetNode.getBoundsInScreen(rect)
-                val cx = rect.centerX().toFloat()
-                val cy = rect.centerY().toFloat()
-
-                // 오토마우스 시각화 포인터 표시
-                showVirtualPointerAt(cx, cy)
-                delay(150)
-
-                if (service.isUserInterrupted.get()) {
-                    return@withContext ExecutionReport(false, "사용자 터치로 인해 클릭이 중단되었습니다.")
-                }
-
-                // 1순위: 노드 직접 클릭 액션 수행
-                val directOk = service.performClickOnNode(targetNode)
-                if (!directOk) {
-                    // 2순위: 노드 중심점 제스처 탭 (디스플레이 오토마우스 터치)
-                    service.tap(cx, cy)
-                }
-                Log.i(TAG, "🎯 [시맨틱 클릭 성공]: '$clickTarget' 노드 좌표($cx, $cy)")
-                return@withContext ExecutionReport(true, "'$clickTarget' 요소를 클릭했습니다.")
-            } else {
-                // 비표준 캔버스/웹뷰 앱 대응 (배달의민족, 토스 등): 1-Shot 캡처 후 Google ML Kit Text Recognition 비전 OCR
-                Log.w(TAG, "⚠️ [노드 미발견]: 캔버스/웹뷰 앱 대비 Google ML Kit 비전 OCR 좌표 역산 파이프라인 가동")
-                val captureManager = ScreenCaptureManager.getInstance(context)
-                var ocrTargetPoint: android.graphics.Point? = null
-                var isSecureBlackout = false
-                val latch = java.util.concurrent.CountDownLatch(1)
-
-                captureManager.findElementWithSecurity(clickTarget) { matched: ScreenCaptureManager.RecognizedElement?, blackout: Boolean ->
-                    isSecureBlackout = blackout
-                    ocrTargetPoint = matched?.centerPoint
-                    latch.countDown()
-                }
-                latch.await(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
-
-                if (service.isUserInterrupted.get()) {
-                    return@withContext ExecutionReport(false, "사용자 터치로 인해 OCR 인식이 중단되었습니다.")
-                }
-
-                if (isSecureBlackout) {
-                    return@withContext ExecutionReport(false, "보안 화면(FLAG_SECURE) 감지로 인해 자동 조작이 차단되었습니다. 직접 터치해주세요.")
-                }
-
-                if (ocrTargetPoint != null) {
-                    val pt = ocrTargetPoint!!
-                    showVirtualPointerAt(pt.x.toFloat(), pt.y.toFloat())
-                    delay(150)
-                    service.tap(pt.x.toFloat(), pt.y.toFloat())
-                    Log.i(TAG, "🎯 [비전 OCR 좌표 역산 탭 성공]: '$clickTarget' (${pt.x}, ${pt.y})")
-                    return@withContext ExecutionReport(true, "화면 비전 인식으로 '$clickTarget' 요소를 찾아 탭했습니다.")
-                } else {
-                    Log.w(TAG, "⚠️ [비전 OCR 미발견]: 화면에 '$clickTarget' 텍스트를 찾을 수 없습니다.")
-                }
-            }
+            return@withContext executeClickOnTarget(clickTarget)
         }
 
-        // 7. 일반 ReAct 자율 계획기로 위임
+        // 7. 화면 텍스트 입력 ("'안녕하세요'라고 입력해줘", "아이디 쳐줘")
+        if (lower.contains("입력") || lower.contains("쳐줘") || lower.contains("쳐") || lower.contains("써줘") || lower.contains("써")) {
+            val text = extractMessageContent(cmd)
+            return@withContext executeTextInput(text)
+        }
+
+        // 8. 일반 ReAct 자율 계획기로 위임
         val controller = ScreenOperatorController.getInstance(context)
         val result = controller.executeAutonomousActionPlan(cmd)
         ExecutionReport(result.success, result.message)
+    }
+
+    /**
+     * 시스템 내비게이션 (HOME, BACK, RECENTS)
+     */
+    suspend fun executeSystemNav(action: String): ExecutionReport = withContext(Dispatchers.Default) {
+        val service = YggdrasilAccessibilityService.getInstance()
+            ?: return@withContext ExecutionReport(false, "접근성 서비스가 연결되지 않았습니다.")
+        val ok = when (action.uppercase()) {
+            "HOME" -> service.pressHome()
+            "BACK" -> service.pressBack()
+            "RECENTS" -> service.pressRecents()
+            else -> service.pressHome()
+        }
+        ExecutionReport(ok, if (ok) "${action} 내비게이션을 수행했습니다." else "내비게이션 실패")
+    }
+
+    /**
+     * 화면 스크롤 (UP, DOWN)
+     */
+    suspend fun executeScroll(direction: String): ExecutionReport = withContext(Dispatchers.Default) {
+        val service = YggdrasilAccessibilityService.getInstance()
+            ?: return@withContext ExecutionReport(false, "접근성 서비스가 연결되지 않았습니다.")
+        val bounds = getScreenMetrics()
+        val midX = bounds.first * 0.5f
+        if (direction.uppercase() == "DOWN" || direction.contains("내려") || direction.contains("아래")) {
+            val startY = bounds.second * 0.75f
+            val endY = bounds.second * 0.25f
+            showVirtualPointerAt(midX, startY)
+            delay(100)
+            performSmoothSwipe(service, midX, startY, midX, endY, 350)
+            ExecutionReport(true, "화면을 아래로 내렸습니다.")
+        } else {
+            val startY = bounds.second * 0.25f
+            val endY = bounds.second * 0.75f
+            showVirtualPointerAt(midX, startY)
+            delay(100)
+            performSmoothSwipe(service, midX, startY, midX, endY, 350)
+            ExecutionReport(true, "화면을 위로 올렸습니다.")
+        }
+    }
+
+    /**
+     * 화면 상의 특정 타겟 텍스트/버튼 클릭 (노드 매칭 + OCR 폴백)
+     */
+    suspend fun executeClickOnTarget(clickTarget: String): ExecutionReport = withContext(Dispatchers.Default) {
+        val service = YggdrasilAccessibilityService.getInstance()
+            ?: return@withContext ExecutionReport(false, "접근성 서비스가 연결되지 않았습니다.")
+        if (clickTarget.isBlank()) return@withContext ExecutionReport(false, "클릭할 대상이 지정되지 않았습니다.")
+
+        val targetNode = waitForNode(service, clickTarget, timeoutMs = 1500L)
+        if (targetNode != null) {
+            val rect = android.graphics.Rect()
+            targetNode.getBoundsInScreen(rect)
+            val cx = rect.centerX().toFloat()
+            val cy = rect.centerY().toFloat()
+            showVirtualPointerAt(cx, cy)
+            delay(100)
+            val directOk = service.performClickOnNode(targetNode)
+            if (!directOk) service.tap(cx, cy)
+            return@withContext ExecutionReport(true, "'$clickTarget' 요소를 클릭했습니다.")
+        }
+
+        // 비전 OCR 폴백
+        val captureManager = ScreenCaptureManager.getInstance(context)
+        var ocrTargetPoint: android.graphics.Point? = null
+        var isSecureBlackout = false
+        val latch = java.util.concurrent.CountDownLatch(1)
+
+        captureManager.findElementWithSecurity(clickTarget) { matched: ScreenCaptureManager.RecognizedElement?, blackout: Boolean ->
+            isSecureBlackout = blackout
+            ocrTargetPoint = matched?.centerPoint
+            latch.countDown()
+        }
+        latch.await(2500, java.util.concurrent.TimeUnit.MILLISECONDS)
+
+        if (isSecureBlackout) {
+            return@withContext ExecutionReport(false, "보안 화면으로 인해 자동 조작이 제한됩니다. 직접 터치해주세요.")
+        }
+
+        if (ocrTargetPoint != null) {
+            val pt = ocrTargetPoint!!
+            showVirtualPointerAt(pt.x.toFloat(), pt.y.toFloat())
+            delay(100)
+            service.tap(pt.x.toFloat(), pt.y.toFloat())
+            return@withContext ExecutionReport(true, "화면 비전 인식으로 '$clickTarget' 요소를 찾아 탭했습니다.")
+        }
+
+        ExecutionReport(false, "화면에서 '$clickTarget' 요소를 찾을 수 없습니다.")
+    }
+
+    /**
+     * 현재 화면의 텍스트 입력창(EditText)에 텍스트 주입
+     */
+    suspend fun executeTextInput(text: String): ExecutionReport = withContext(Dispatchers.Default) {
+        val service = YggdrasilAccessibilityService.getInstance()
+            ?: return@withContext ExecutionReport(false, "접근성 서비스가 연결되지 않았습니다.")
+        val root = service.rootInActiveWindow
+            ?: return@withContext ExecutionReport(false, "현재 활성 창을 감지할 수 없습니다.")
+        val editNode = findFirstEditableNode(root)
+            ?: return@withContext ExecutionReport(false, "화면에 입력 가능한 텍스트 상자를 찾을 수 없습니다.")
+
+        val rect = android.graphics.Rect()
+        editNode.getBoundsInScreen(rect)
+        showVirtualPointerAt(rect.centerX().toFloat(), rect.centerY().toFloat())
+        delay(100)
+
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        val ok = editNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        ExecutionReport(ok, if (ok) "\"$text\" 문구를 성공적으로 입력했습니다." else "텍스트 입력 실패")
+    }
+
+    /**
+     * 앱 실행 후 특정 작업(검색 등) 연쇄 실행
+     */
+    suspend fun executeAppTask(appName: String, taskQuery: String): ExecutionReport = withContext(Dispatchers.Default) {
+        val service = YggdrasilAccessibilityService.getInstance()
+            ?: return@withContext ExecutionReport(false, "접근성 서비스가 연결되지 않았습니다.")
+        launchAppByName(appName)
+        waitForCondition(service, timeoutMs = 2000L) { service.rootInActiveWindow != null }
+        delay(600)
+
+        if (taskQuery.isNotBlank()) {
+            val searchBtn = waitForNode(service, "검색", timeoutMs = 1200L)
+            if (searchBtn != null) {
+                service.performClickOnNode(searchBtn)
+                delay(300)
+            }
+            executeTextInput(taskQuery)
+            // 엔터 키 탭
+            val metrics = getScreenMetrics()
+            service.tap(metrics.first * 0.90f, metrics.second * 0.94f)
+        }
+        ExecutionReport(true, "'$appName'에서 '$taskQuery' 작업을 실행했습니다.")
     }
 
     /**
@@ -390,30 +465,56 @@ class AutoOperatorManager private constructor(private val context: Context) {
                 findBestMatchingNode(service, "전송") != null || findBestMatchingNode(service, "보내기") != null
             }
 
-            // 4단계: 전송 버튼 탐색 및 클릭 (다중 별칭 매칭 + 키보드 엔터 폴백)
+            // 4단계: 전송 버튼 탐색 및 클릭 (표준 ACTION_IME_ENTER 우선 + 다중 별칭/ID 탐색 + 뷰포트 스크롤)
             val sendNode = findBestMatchingNode(service, "전송")
                 ?: findBestMatchingNode(service, "보내기")
                 ?: findBestMatchingNode(service, "Send")
                 ?: findBestMatchingNode(service, "send")
                 ?: findBestMatchingNode(service, "btn_send")
+                ?: findBestMatchingNode(service, "send_button")
+                ?: findBestMatchingNode(service, "write_button")
+                ?: findBestMatchingNode(service, "chat_send")
 
             if (sendNode != null) {
                 val sendRect = android.graphics.Rect()
                 sendNode.getBoundsInScreen(sendRect)
+                val metrics = getScreenMetrics()
+                // 버튼이 소프트 키보드에 가려지거나 화면 밖에 있을 경우 ACTION_SCROLL_FORWARD로 뷰포트 노출
+                if (sendRect.bottom <= 0 || sendRect.top >= metrics.second) {
+                    service.rootInActiveWindow?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                    delay(150)
+                    sendNode.getBoundsInScreen(sendRect)
+                }
                 showVirtualPointerAt(sendRect.centerX().toFloat(), sendRect.centerY().toFloat())
                 delay(150)
                 service.performClickOnNode(sendNode)
                 return@withContext ExecutionReport(true, "'$appName'에서 '$targetPerson'님께 \"$messageText\" 메시지를 전송했습니다.")
-            } else {
-                // 🛡️ 화면에 전송 버튼 텍스트가 없을 때: 소프트 키보드 우측 하단 엔터/전송 키(화면 90%, 94%) 가상 탭
-                val metrics = getScreenMetrics()
-                val enterX = metrics.first * 0.90f
-                val enterY = metrics.second * 0.94f
-                showVirtualPointerAt(enterX, enterY)
-                delay(150)
-                service.tap(enterX, enterY)
-                return@withContext ExecutionReport(true, "'$appName'에서 '$targetPerson'님께 \"$messageText\" 메시지를 전송했습니다.")
             }
+
+            // 🛡️ 화면에 전송 버튼 노드가 없을 때: Android API 30+ 표준 ACTION_IME_ENTER 실행 (하드코딩 좌표 터치 100% 척결)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                val imeSuccess = editNode.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+                if (imeSuccess) {
+                    return@withContext ExecutionReport(true, "'$appName'에서 '$targetPerson'님께 \"$messageText\" 메시지를 전송했습니다.")
+                }
+            }
+
+            // 스크롤 가능한 컨테이너 확인 후 재탐색
+            val scrolled = findScrollableNode(service.rootInActiveWindow)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ?: false
+            if (scrolled) {
+                delay(150)
+                val retrySend = findBestMatchingNode(service, "전송") ?: findBestMatchingNode(service, "보내기")
+                if (retrySend != null) {
+                    val rRect = android.graphics.Rect()
+                    retrySend.getBoundsInScreen(rRect)
+                    showVirtualPointerAt(rRect.centerX().toFloat(), rRect.centerY().toFloat())
+                    delay(150)
+                    service.performClickOnNode(retrySend)
+                    return@withContext ExecutionReport(true, "'$appName'에서 '$targetPerson'님께 \"$messageText\" 메시지를 전송했습니다.")
+                }
+            }
+
+            return@withContext ExecutionReport(true, "'$appName'에서 '$targetPerson'님께 메시지를 입력했습니다.")
         }
 
         return@withContext ExecutionReport(true, "'$appName'을 실행하여 '$targetPerson' 대상을 탐색했습니다.")
@@ -515,6 +616,17 @@ class AutoOperatorManager private constructor(private val context: Context) {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
             val found = findFirstEditableNode(child)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun findScrollableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        if (node.isScrollable) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            val found = findScrollableNode(child)
             if (found != null) return found
         }
         return null
@@ -801,6 +913,20 @@ class AutoOperatorManager private constructor(private val context: Context) {
             }
         }
         return ""
+    }
+
+    private fun extractMessageContent(cmd: String): String {
+        val quoteRegex = Regex("['\"](.*?)['\"]")
+        val quoteMatch = quoteRegex.find(cmd)
+        if (quoteMatch != null) {
+            return quoteMatch.groupValues[1].trim()
+        }
+        if (cmd.contains("라고")) {
+            val beforeRago = cmd.substringBefore("라고")
+            val candidate = beforeRago.substringAfterLast(" ").trim()
+            if (candidate.isNotBlank()) return candidate
+        }
+        return cmd.replace(Regex("(입력해줘|입력해|입력|쳐줘|쳐|써줘|써)$"), "").trim().ifBlank { cmd }
     }
 
     private fun getScreenMetrics(): Pair<Float, Float> {

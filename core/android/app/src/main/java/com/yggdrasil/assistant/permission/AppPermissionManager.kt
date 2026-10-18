@@ -46,6 +46,19 @@ class AppPermissionManager private constructor(private val context: Context) {
     fun checkAllPermissions(): List<PermissionItem> {
         val list = mutableListOf<PermissionItem>()
 
+        // 0. 기본 디지털 어시스턴트 앱 (VoiceInteractionService) - 홈버튼/측면키/제스처 롱프레스 일원화
+        val isDefaultAssistant = isDefaultAssistantServiceEnabled()
+        list.add(
+            PermissionItem(
+                id = "default_assistant",
+                name = "기본 디지털 어시스턴트 (홈버튼/전원키)",
+                description = "홈 버튼 길게 누르기, 측면 전원 키, 하단 스와이프 시 순정 AI 비서로 즉시 실행됩니다.",
+                isGranted = isDefaultAssistant,
+                isCritical = true,
+                intentAction = Settings.ACTION_VOICE_INPUT_SETTINGS
+            )
+        )
+
         // 1. 접근성 서비스 (화면 자동 터치/타이핑) - 필수
         val isAccessibilityGranted = isAccessibilityServiceEnabled()
         list.add(
@@ -154,6 +167,17 @@ class AppPermissionManager private constructor(private val context: Context) {
         )
 
         return list
+    }
+
+    fun isDefaultAssistantServiceEnabled(): Boolean {
+        val currentAssistant = Settings.Secure.getString(
+            context.contentResolver,
+            "voice_interaction_service"
+        ) ?: Settings.Secure.getString(
+            context.contentResolver,
+            "assistant"
+        ) ?: return false
+        return currentAssistant.contains(context.packageName)
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {

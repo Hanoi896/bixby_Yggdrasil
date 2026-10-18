@@ -19,12 +19,25 @@ class YggdrasilVoiceInteractionService : VoiceInteractionService() {
 
     companion object {
         private const val TAG = "VoiceInteractionService"
+
+        @Volatile
+        private var instance: YggdrasilVoiceInteractionService? = null
+
+        fun getInstance(): YggdrasilVoiceInteractionService? = instance
+
+        fun triggerSession(flags: Int = VoiceInteractionSession.SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT): Boolean {
+            return instance?.let {
+                it.showSession(Bundle(), flags)
+                true
+            } ?: false
+        }
     }
 
     private var hotwordDetector: YggdrasilHotwordDetector? = null
 
     override fun onReady() {
         super.onReady()
+        instance = this
         Log.i(TAG, "🌟 Yggdrasil 기본 디지털 어시스턴트 서비스 활성화 완료!")
 
         // 핫워드 감지기 초기화 및 리스너 등록
@@ -42,6 +55,9 @@ class YggdrasilVoiceInteractionService : VoiceInteractionService() {
         super.onShutdown()
         hotwordDetector?.stopListening()
         hotwordDetector = null
+        if (instance == this) {
+            instance = null
+        }
         Log.i(TAG, "🛑 Yggdrasil 어시스턴트 서비스 종료")
     }
 }

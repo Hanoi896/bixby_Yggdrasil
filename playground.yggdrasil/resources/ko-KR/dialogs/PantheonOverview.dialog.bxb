@@ -1,4 +1,0 @@
-dialog (Result) {
-  match: PantheonOverview (this)
-  template ("판테온 6대 에이전트와 9대 영역이 현재 #{value(this.overallStatus)} 상태입니다.")
-}

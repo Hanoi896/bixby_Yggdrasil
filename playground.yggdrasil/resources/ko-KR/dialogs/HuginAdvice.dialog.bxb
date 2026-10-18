@@ -1,4 +1,0 @@
-dialog (Result) {
-  match: HuginAdvice (this)
-  template ("휴긴이 분석한 결과입니다. #{value(this.recommendation)}")
-}

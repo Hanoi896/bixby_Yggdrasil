@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
 
     private var llmService: LocalLlmService? = null
     private var isBound = false
+    private var otpSniffer: com.yggdrasil.assistant.security.OtpSmsAutoSniffer? = null
 
     // 빅스비 app-launch 딥링크로부터 전달받은 사용자 발화 쿼리 및 목표 탭 상태
     private val pendingDeepLinkQuery = mutableStateOf<String?>(null)
@@ -390,6 +391,18 @@ class MainActivity : ComponentActivity() {
      * - yggdrasil://launch          -> [대화] 탭 (0번) 기본 실행
      */
     private fun handleDeepLink(intent: Intent?) {
+        if (intent != null) {
+            val action = intent.action
+            if (action == Intent.ACTION_ASSIST || action == Intent.ACTION_VOICE_COMMAND) {
+                android.util.Log.i("MainActivity", "🎙️ 시스템 어시스턴트 인텐트 수신 ($action) -> VoiceSession 및 대화 모드 연동")
+                val triggered = com.yggdrasil.assistant.voice.YggdrasilVoiceInteractionService.triggerSession()
+                if (!triggered) {
+                    pendingTargetTab.value = 0
+                }
+                return
+            }
+        }
+
         val uri = intent?.data ?: return
         if (uri.scheme.equals("yggdrasil", ignoreCase = true)) {
             val host = uri.host?.lowercase()
@@ -436,6 +449,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        registerOtpSnifferSafely()
+    }
+
     override fun onPause() {
         super.onPause()
         tts?.stop()
@@ -446,10 +464,44 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        unregisterOtpSnifferSafely()
         tts?.stop()
         try {
             com.yggdrasil.assistant.voice.YggdrasilTtsManager.getInstance(this).stop()
         } catch (_: Exception) {}
+    }
+
+    private fun registerOtpSnifferSafely() {
+        if (otpSniffer == null) {
+            otpSniffer = com.yggdrasil.assistant.security.OtpSmsAutoSniffer { otpCode ->
+                android.util.Log.i("MainActivity", "🎯 2FA OTP 자동 추출 성공: $otpCode")
+                runOnUiThread {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("Yggdrasil 2FA OTP", otpCode)
+                    clipboard?.setPrimaryClip(clip)
+                    android.widget.Toast.makeText(this@MainActivity, "2FA 인증번호 [$otpCode] 자동 복사 완료", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+            val filter = android.content.IntentFilter(android.provider.Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    registerReceiver(otpSniffer, filter, Context.RECEIVER_EXPORTED)
+                } else {
+                    registerReceiver(otpSniffer, filter)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MainActivity", "OTP SMS 리시버 등록 예외", e)
+            }
+        }
+    }
+
+    private fun unregisterOtpSnifferSafely() {
+        otpSniffer?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {}
+            otpSniffer = null
+        }
     }
 
     override fun onDestroy() {

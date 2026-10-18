@@ -1,3 +1,0 @@
-boolean (IsLocalInference) {
-  description (온디바이스 로컬 추론 여부 플래그)
-}

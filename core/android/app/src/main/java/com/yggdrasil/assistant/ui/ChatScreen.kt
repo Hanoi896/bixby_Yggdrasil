@@ -139,24 +139,35 @@ fun ChatScreen(
                 val targetIndex = messages.size - 1
                 val accumulated = StringBuilder()
                 var firstToken = true
+                var lastUiUpdateTime = 0L
+                val tokenLock = Any()
 
                 val result = onSendMessageToNpuStream(trimmed) { token ->
                     if (firstToken) {
                         hapticManager.performTokenTick()
                         firstToken = false
                     }
-                    coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                    synchronized(tokenLock) {
                         accumulated.append(token)
-                        if (targetIndex in messages.indices) {
-                            messages[targetIndex] = messages[targetIndex].copy(text = accumulated.toString())
+                    }
+                    val now = System.currentTimeMillis()
+                    // 33ms (~30fps) 윈도우 스로틀링: 120Hz 고주사율 유지 및 리컴포지션 폭주 원천 차단
+                    if (now - lastUiUpdateTime >= 33L || token.contains("\n")) {
+                        lastUiUpdateTime = now
+                        val currentText = synchronized(tokenLock) { accumulated.toString() }
+                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                            if (targetIndex in messages.indices) {
+                                messages[targetIndex] = messages[targetIndex].copy(text = currentText)
+                            }
                         }
                     }
                 }
 
+                val finalText = result.ifBlank { synchronized(tokenLock) { accumulated.toString() } }
                 if (targetIndex in messages.indices) {
-                    messages[targetIndex] = messages[targetIndex].copy(text = result.ifBlank { accumulated.toString() })
+                    messages[targetIndex] = messages[targetIndex].copy(text = finalText)
                 }
-                result.ifBlank { accumulated.toString() }
+                finalText
             } else {
                 val response = onSendMessageToNpu(trimmed)
                 messages.add(ChatMessage(sender = SenderType.ASSISTANT, text = response))

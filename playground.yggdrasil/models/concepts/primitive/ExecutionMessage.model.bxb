@@ -1,3 +1,0 @@
-text (ExecutionMessage) {
-  description (실행 결과 상세 메시지)
-}

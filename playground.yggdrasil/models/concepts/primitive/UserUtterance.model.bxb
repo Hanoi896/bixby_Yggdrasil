@@ -1,3 +1,0 @@
-text (UserUtterance) {
-  description (사용자가 빅스비에게 입력한 자연스러운 한국어 자유 발화 텍스트)
-}

@@ -1,3 +1,0 @@
-text (RecordId) {
-  description (기억 레코드 고유 식별자)
-}

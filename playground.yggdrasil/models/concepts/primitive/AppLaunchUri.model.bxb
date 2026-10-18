@@ -1,3 +1,0 @@
-text (AppLaunchUri) {
-  description (이그드라실 안드로이드 앱 실행 딥링크 URI: yggdrasil://chat?query=...)
-}

@@ -1,3 +1,0 @@
-text (ActiveOdinMessage) {
-  description (오딘 커널의 현재 활성 지침 메시지)
-}

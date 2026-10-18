@@ -1,6 +1,0 @@
-action (LaunchApp) {
-  type (Calculation)
-  description (이그드라실 온디바이스 개인 비서 안드로이드 네이티브 앱을 실행합니다.)
-
-  output (AppLaunchResult)
-}

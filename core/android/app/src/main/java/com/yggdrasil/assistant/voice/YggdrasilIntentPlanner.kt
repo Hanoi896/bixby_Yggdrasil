@@ -30,6 +30,8 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
 
     enum class ActionIntent {
         LAUNCH_APP,          // 단일 앱 실행 ("유튜브 열어줘", "카카오톡 켜")
+        CLICK_ELEMENT,       // 화면 요소 클릭/터치 ("'확인' 눌러줘", "장바구니 담아", "첫 번째 클릭해")
+        INPUT_TEXT,          // 화면 텍스트 입력 ("'홍길동'이라고 쳐줘", "아이디 입력해줘")
         SEND_MESSAGE,        // 복합 메시지 전송 ("엄마한테 10분 뒤 도착한다고 톡 보내")
         PLAY_MEDIA,          // 미디어 재생 ("뉴진스 노래 틀어줘", "침착맨 영상 보여줘")
         CONTROL_DEVICE,      // 기기 제어 ("볼륨 올려", "화면 밝기 줄여", "손전등 켜")
@@ -169,14 +171,15 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
             )
         }
 
-        // 6. 단순 단일 앱 실행 ("유튜브 켜줘", "카카오톡 실행", "인스타 열어")
+        // 6. 단순 단일 앱 실행 ("유튜브 켜줘", "카카오톡 실행", "인스타 열어", "설정 켜")
         val isLaunchVerb = cmd.endsWith("켜줘") || cmd.endsWith("켜") ||
                 cmd.endsWith("열어줘") || cmd.endsWith("열어") ||
                 cmd.endsWith("실행해줘") || cmd.endsWith("실행해") ||
                 cmd.endsWith("실행해 줘") || cmd.endsWith("켜 줘") ||
                 cmd.endsWith("열어 줘")
 
-        if (isLaunchVerb && !cmd.contains("해서") && !cmd.contains("보내") && !cmd.contains("검색")) {
+        // 메시지 전송("보내", "톡", "문자", "한테")이나 검색("검색")이 명시되지 않은 순수 앱 실행 우선 포섭
+        if (isLaunchVerb && !cmd.contains("해서") && !cmd.contains("보내") && !cmd.contains("남겨") && !cmd.contains("검색") && !cmd.contains("한테") && !cmd.contains("에게")) {
             val appKeywords = mapOf(
                 "유튜브뮤직" to "유튜브뮤직",
                 "유튜브" to "유튜브",
@@ -211,16 +214,125 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
             }
         }
 
+        // 7. 화면 요소 클릭/터치 패스트패스 ("'확인' 눌러줘", "취소 클릭해", "장바구니 담아줘")
+        if (cmd.endsWith("눌러줘") || cmd.endsWith("눌러") || cmd.endsWith("클릭해줘") || cmd.endsWith("클릭해") || cmd.endsWith("터치해줘") || cmd.endsWith("터치해")) {
+            val target = cmd.replace(Regex("(눌러줘|눌러|클릭해줘|클릭해|터치해줘|터치해)$"), "").trim().removeSurrounding("'", "'").removeSurrounding("\"", "\"")
+            if (target.isNotBlank()) {
+                return PlannedAction(
+                    intent = ActionIntent.CLICK_ELEMENT,
+                    target = target,
+                    spokenFeedback = "'${target}' 요소를 클릭합니다."
+                )
+            }
+        }
+
+        // 8. 화면 텍스트 입력 패스트패스 ("'홍길동'이라고 쳐줘", "안녕하세요 입력해")
+        if (cmd.endsWith("쳐줘") || cmd.endsWith("쳐") || cmd.endsWith("입력해줘") || cmd.endsWith("입력해") || cmd.endsWith("써줘") || cmd.endsWith("써")) {
+            val text = extractMessageContent(cmd)
+            if (text.isNotBlank()) {
+                return PlannedAction(
+                    intent = ActionIntent.INPUT_TEXT,
+                    content = text,
+                    spokenFeedback = "\"${text}\" 문구를 입력합니다."
+                )
+            }
+        }
+
         return null
     }
 
     /**
-     * EXAONE 2.4B 온디바이스 NPU 모델 프롬프트 쿼리 및 JSON 응답 파싱
+     * 온디바이스 NPU sLLM 기반 Structured Function Calling 프롬프트 쿼리 및 파싱
      */
     private fun queryOnDeviceLlmForPlan(userInput: String): PlannedAction {
-        // 복합 메시지 전송 휴리스틱 폴백 (LLM 네이티브 라이브러리 연결 전 안전망)
-        val lower = userInput.lowercase()
-        if ((lower.contains("보내") || lower.contains("남겨") || lower.contains("전송")) &&
+        val llmService = LocalLlmService.getInstance()
+        if (llmService != null && llmService.isModelLoaded()) {
+            try {
+                val schemaPrompt = """
+당신은 안드로이드 스마트폰 자율 제어 플래너입니다. 사용자의 음성 명령을 분석하여 반드시 단 하나의 JSON으로만 응답하십시오. 설명이나 마크다운 백틱(```)은 절대 출력하지 마십시오.
+
+JSON 규격:
+{"action":"LAUNCH_APP"|"CLICK_ELEMENT"|"INPUT_TEXT"|"SEND_MESSAGE"|"PLAY_MEDIA"|"CONTROL_DEVICE"|"SYSTEM_NAV"|"SCROLL"|"SEARCH_WEB"|"DIRECT_ANSWER","appName":"실행앱이름","target":"클릭대상_또는_수신인","content":"입력내용_또는_검색어","spokenFeedback":"사용자에게_말할_짧은_한국어_답변"}
+
+예시:
+- "유튜브 켜서 아이유 틀어줘" -> {"action":"PLAY_MEDIA","appName":"유튜브","content":"아이유","spokenFeedback":"유튜브에서 아이유를 재생합니다."}
+- "엄마한테 10분 뒤 도착한다고 톡 보내" -> {"action":"SEND_MESSAGE","appName":"카카오톡","target":"엄마","content":"10분 뒤 도착","spokenFeedback":"엄마님께 카카오톡을 전송합니다."}
+- "장바구니 담기 눌러줘" -> {"action":"CLICK_ELEMENT","target":"장바구니 담기","spokenFeedback":"장바구니 담기를 누릅니다."}
+- "'홍길동'이라고 쳐줘" -> {"action":"INPUT_TEXT","content":"홍길동","spokenFeedback":"홍길동을 입력합니다."}
+- "홈으로 가" -> {"action":"SYSTEM_NAV","content":"HOME","spokenFeedback":"홈 화면으로 이동합니다."}
+- "화면 내려줘" -> {"action":"SCROLL","content":"DOWN","spokenFeedback":"화면을 아래로 내립니다."}
+- "오늘 비 와?" -> {"action":"DIRECT_ANSWER","spokenFeedback":"오늘 날씨를 확인해 드리겠습니다."}
+""".trimIndent()
+
+                val rawResponse = llmService.generateWithPersona(schemaPrompt, userInput).trim()
+                Log.i(TAG, "🧠 [온디바이스 NPU Function Calling 원문]: $rawResponse")
+
+                val jsonStart = rawResponse.indexOf('{')
+                val jsonEnd = rawResponse.lastIndexOf('}')
+                if (jsonStart != -1 && jsonEnd != -1 && jsonEnd > jsonStart) {
+                    val jsonStr = rawResponse.substring(jsonStart, jsonEnd + 1)
+                    val obj = JSONObject(jsonStr)
+                    val actionStr = obj.optString("action", "DIRECT_ANSWER")
+                    val intent = try {
+                        ActionIntent.valueOf(actionStr)
+                    } catch (_: Exception) {
+                        ActionIntent.DIRECT_ANSWER
+                    }
+                    val appName = obj.optString("appName", "")
+                    val target = obj.optString("target", "")
+                    val content = obj.optString("content", "")
+                    val spoken = obj.optString("spokenFeedback", "명령을 수행합니다.")
+
+                    return PlannedAction(
+                        intent = intent,
+                        appName = appName,
+                        target = target,
+                        content = content,
+                        spokenFeedback = spoken,
+                        directResponse = spoken
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "NPU LLM Function Calling 파싱 예외 -> 정밀 휴리스틱 폴백 가동", e)
+            }
+        }
+
+        // 모델 미탑재/언로드/파싱 실패 시 정밀 휴리스틱 슬롯 필러 가동
+        return fallbackSemanticSlotFiller(userInput)
+    }
+
+    /**
+     * NPU 오프라인 상태에서도 100% 실동작하는 정밀 휴리스틱 슬롯 필러
+     */
+    private fun fallbackSemanticSlotFiller(userInput: String): PlannedAction {
+        val lower = userInput.lowercase().trim()
+
+        // 1. 화면 요소 클릭/선택 ("장바구니 담아", "첫 번째 눌러줘", "확인 터치해")
+        if (lower.contains("눌러") || lower.contains("클릭") || lower.contains("터치") || lower.contains("담아") || lower.contains("선택해")) {
+            val target = lower.replace(Regex(".*(화면에서|화면에|있는|버튼|메뉴)"), "")
+                .replace(Regex("(눌러줘|눌러|클릭해줘|클릭해|터치해줘|터치해|담아줘|담아|선택해줘|선택해)$"), "")
+                .trim().removeSurrounding("'", "'").removeSurrounding("\"", "\"")
+            if (target.isNotBlank()) {
+                return PlannedAction(
+                    intent = ActionIntent.CLICK_ELEMENT,
+                    target = target,
+                    spokenFeedback = "'${target}' 요소를 터치합니다."
+                )
+            }
+        }
+
+        // 2. 화면 텍스트 입력 ("홍길동이라고 쳐", "안녕하세요 입력해줘")
+        if (lower.contains("입력") || lower.contains("쳐줘") || lower.contains("쳐") || lower.contains("써줘") || lower.contains("써")) {
+            val text = extractMessageContent(userInput)
+            return PlannedAction(
+                intent = ActionIntent.INPUT_TEXT,
+                content = text,
+                spokenFeedback = "\"${text}\" 문구를 입력합니다."
+            )
+        }
+
+        // 3. 복합 메시지 전송 ("OO에게 ~~라고 톡 보내")
+        if ((lower.contains("보내") || lower.contains("전송") || lower.contains("남겨")) &&
             (lower.contains("톡") || lower.contains("문자") || lower.contains("한테") || lower.contains("에게"))
         ) {
             val target = extractTargetPerson(userInput)
@@ -232,11 +344,23 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
                 appName = app,
                 target = target,
                 content = msg,
-                spokenFeedback = "${target}님께 ${msg} 메시지를 전송합니다."
+                spokenFeedback = "${target}님께 \"${msg}\" 메시지를 전송합니다."
             )
         }
 
-        // 웹 검색 질의 분기
+        // 4. 앱 내 특정 작업 연쇄 실행 ("유튜브 열어서 OO 검색해줘", "플레이스토어 켜서 OO 깔아줘")
+        if (lower.contains("실행해서") || lower.contains("켜서") || lower.contains("열어서") || lower.contains("들어가서") || lower.contains("열고")) {
+            val app = extractTargetAppName(userInput)
+            val task = userInput.substringAfter("해서").substringAfter("켜서").substringAfter("열어서").substringAfter("들어가서").substringAfter("열고").trim()
+            return PlannedAction(
+                intent = ActionIntent.CHAINED_APP_ACTION,
+                appName = app,
+                content = task,
+                spokenFeedback = "${app}에서 작업을 시작합니다."
+            )
+        }
+
+        // 5. 웹 검색
         if (lower.contains("검색") || lower.contains("찾아줘") || lower.contains("알려줘") || lower.contains("어디")) {
             val cleanQuery = userInput.replace(Regex("(검색해줘|검색|찾아줘|찾아|알려줘)$"), "").trim()
             return PlannedAction(
@@ -246,7 +370,7 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
             )
         }
 
-        // 기본 대화 응답
+        // 6. 일반 질의
         return PlannedAction(
             intent = ActionIntent.DIRECT_ANSWER,
             spokenFeedback = "말씀하신 내용을 확인했습니다.",
@@ -254,10 +378,19 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
         )
     }
 
+    private fun extractTargetAppName(cmd: String): String {
+        val appKeywords = listOf(
+            "유튜브뮤직", "유튜브", "카카오톡", "카톡", "인스타그램", "인스타",
+            "네이버지도", "네이버", "쿠팡", "설정", "카메라", "갤러리", "플레이스토어",
+            "시계", "알람", "계산기", "캘린더", "달력", "카카오T", "배달의민족", "배민", "당근", "토스"
+        )
+        return appKeywords.firstOrNull { cmd.contains(it) } ?: ""
+    }
+
     private fun extractTargetPerson(cmd: String): String {
         val targetRegex = Regex("([가-힣a-zA-Z0-9]+)(에게|한테|방에)")
         val match = targetRegex.find(cmd)
-        return match?.groupValues?.get(1)?.trim() ?: "대상"
+        return match?.groupValues?.get(1)?.trim() ?: "상대방"
     }
 
     private fun extractMessageContent(cmd: String): String {
@@ -281,7 +414,7 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
         }
 
         return afterTarget
-            .replace(Regex("(카톡|카카오톡|문자|메시지|보내줘|보내|남겨줘|남겨|전송해줘|전송)$"), "")
+            .replace(Regex("(카톡|카카오톡|문자|메시지|보내줘|보내|남겨줘|남겨|전송해줘|전송|입력해줘|입력|쳐줘|쳐|써줘|써)$"), "")
             .trim()
             .ifBlank { "안녕하세요" }
     }

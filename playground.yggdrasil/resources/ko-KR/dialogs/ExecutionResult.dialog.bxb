@@ -1,4 +1,0 @@
-dialog (Result) {
-  match: ExecutionResult (this)
-  template ("#{value(this.message)}")
-}

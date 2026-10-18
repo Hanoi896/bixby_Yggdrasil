@@ -1,3 +1,0 @@
-text (RealmAccessLevel) {
-  description (해당 영역의 보안 접근 레벨)
-}

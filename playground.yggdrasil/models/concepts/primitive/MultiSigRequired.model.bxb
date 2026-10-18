@@ -1,3 +1,0 @@
-boolean (MultiSigRequired) {
-  description (다중 서명 필수 여부 플래그)
-}
