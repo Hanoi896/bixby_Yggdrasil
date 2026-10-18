@@ -28,7 +28,8 @@ object KoreanSemanticLexicon {
         val action: SemanticAction,
         val targetEntity: String,    // 대상 인물, 장소, 목적어 ("엄마", "강남역", "뉴진스")
         val appOrMedium: String,     // 대상 앱/수단 ("카카오톡", "유튜브", "네이버지도")
-        val messagePayload: String   // 전달할 메시지 내용 ("10분 뒤 도착")
+        val messagePayload: String,  // 전달할 메시지 내용 ("10분 뒤 도착")
+        val isSelfTarget: Boolean = false // 1인칭 자아 참조 ("나에게", "나한테", "내게", "나와의 채팅")
     )
 
     // 기본 내장 폴백 사전 (DB 초기화 전이나 컨텍스트 부재 시)
@@ -55,7 +56,9 @@ object KoreanSemanticLexicon {
      * 한국어 구어체 문장을 온톨로지 DB 기반으로 정규화
      */
     fun normalize(sentence: String, context: Context? = null): NormalizedCommand {
-        var clean = sentence.trim()
+        // 0. 영타 오타/외래어 한국어 변환 및 문장 부호("", ,, ?) 자동 부착
+        val enriched = KoreanPunctuationEngine.enrichUserUtterance(sentence)
+        var clean = enriched.trim()
 
         // 1. 온톨로지 DB 참조 (가능 시)
         val ontologyDb = context?.let { KoreanOntologyDatabase.getInstance(it) }
@@ -83,10 +86,18 @@ object KoreanSemanticLexicon {
             }
         }
 
-        // 대상 인물 추출 ("엄마한테", "철수에게", "홍길동방에", "아빠")
-        val personRegex = Regex("([가-힣a-zA-Z0-9]+)(에게|한테|방에|께)")
-        val personMatch = personRegex.find(clean)
-        val targetEntity = personMatch?.groupValues?.get(1) ?: ""
+        // 3. 자아 참조(1인칭 본인) 또는 대상 인물 추출
+        val isSelf = clean.contains("나에게") || clean.contains("나한테") || clean.contains("내게") ||
+                     clean.contains("나자신에게") || clean.contains("나와의 채팅") || clean.contains("나와의채팅") ||
+                     clean.contains("내게로")
+
+        val targetEntity = if (isSelf) {
+            "나"
+        } else {
+            val personRegex = Regex("([가-힣a-zA-Z0-9]+)(에게|한테|방에|께)")
+            val personMatch = personRegex.find(clean)
+            personMatch?.groupValues?.get(1)?.trim() ?: ""
+        }
 
         // 메시지 본문 추출
         var payload = ""
@@ -94,9 +105,13 @@ object KoreanSemanticLexicon {
             val quoteRegex = Regex("['\"](.*?)['\"]")
             val quoteMatch = quoteRegex.find(clean)
             payload = if (quoteMatch != null) {
-                quoteMatch.groupValues[1]
-            } else if (clean.contains("라고")) {
-                clean.substringBefore("라고").substringAfterLast(" ").trim()
+                quoteMatch.groupValues[1].trim()
+            } else if (clean.contains("이라고") || clean.contains("라고")) {
+                val delimiter = if (clean.contains("이라고")) "이라고" else "라고"
+                val beforeQuote = clean.substringBefore(delimiter)
+                // "카톡에서 나에게 안녕" -> "안녕"만 정밀 추출
+                val trimmed = beforeQuote.replace(Regex(".*(에게|한테|방에|께|에서|카카오톡|카톡|문자|메시지)"), "").trim()
+                trimmed.ifBlank { beforeQuote.substringAfterLast(" ").trim() }
             } else if (targetEntity.isNotBlank()) {
                 val afterTarget = clean.substringAfter(targetEntity)
                     .replace(Regex("(에게|한테|방에|께|카카오톡|문자|메시지|보내줘|보내|남겨줘|남겨|전송해줘|전송)"), "")
@@ -116,7 +131,8 @@ object KoreanSemanticLexicon {
             action = detectedAction,
             targetEntity = targetEntity,
             appOrMedium = detectedApp,
-            messagePayload = payload
+            messagePayload = payload,
+            isSelfTarget = isSelf
         )
     }
 

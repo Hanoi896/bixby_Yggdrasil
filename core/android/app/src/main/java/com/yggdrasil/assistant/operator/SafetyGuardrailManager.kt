@@ -43,8 +43,12 @@ class SafetyGuardrailManager(private val context: Context) {
             addView(borderView)
 
             setOnTouchListener { _, _ ->
-                // 사용자가 화면을 직접 터치하는 순간 긴급 중단(Fail-Safe) 트리거!
-                triggerUserEmergencyInterrupt()
+                val service = YggdrasilAccessibilityService.getInstance()
+                val isAiOperating = service?.isAiAutomating?.get() == true
+                if (!isAiOperating) {
+                    android.util.Log.i("SafetyGuardrail", "🛑 사용자 물리적 터치 감지 -> AI 즉시 중단")
+                    triggerUserEmergencyInterrupt()
+                }
                 false
             }
         }
@@ -103,6 +107,10 @@ class SafetyGuardrailManager(private val context: Context) {
      * 현재 사용자에 의해 강제 인터럽트가 걸렸는지 여부
      */
     fun isEmergencyStopped(): Boolean = isInterruptedByUser
+
+    fun reset() {
+        isInterruptedByUser = false
+    }
 
     /**
      * 비밀번호/금융 PIN 입력창 여부 검증 (보안 가드레일)

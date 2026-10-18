@@ -93,6 +93,7 @@ class ScreenOperatorController(
         direction: String? = null
     ): ExecutionResult {
         isInterrupted.set(false)
+        safetyGuardrail.reset()
         val service = YggdrasilAccessibilityService.getInstance()
         if (service == null) {
             ScreenCaptureManager.notifyAccessibilityRequired(context)
@@ -101,9 +102,11 @@ class ScreenOperatorController(
                 "화면 조작에 필요한 접근성 서비스가 중단되었습니다. 상단 알림창을 눌러 권한을 다시 켜주세요."
             )
         }
+        service.setAiAutomating(true)
 
         // 1. Fail-Safe 인터럽트 상태 체크
         if (isInterrupted.get() || safetyGuardrail.isEmergencyStopped()) {
+            service.setAiAutomating(false)
             return ExecutionResult(false, "사용자 터치로 인해 긴급 중단(Fail-Safe)되었습니다.")
         }
 
@@ -120,6 +123,7 @@ class ScreenOperatorController(
                 else -> ExecutionResult(false, "지원하지 않는 action입니다: $action")
             }
         } finally {
+            service.setAiAutomating(false)
             // 작업 완료 후 골든 보더 해제 (연속 작업이 아닐 경우)
             safetyGuardrail.hideSafetyGoldenBorder()
         }

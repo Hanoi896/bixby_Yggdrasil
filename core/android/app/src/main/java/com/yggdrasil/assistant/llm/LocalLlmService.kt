@@ -160,8 +160,9 @@ class LocalLlmService : Service() {
     fun executeHeadlessQuery(query: String) {
         serviceScope.launch(Dispatchers.Default) {
             try {
+                val cleanQuery = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.enrichUserUtterance(query)
                 val factBuilder = com.yggdrasil.assistant.rag.FactContextBuilder.getInstance(applicationContext)
-                val enriched = factBuilder.buildEnrichedContext(query)
+                val enriched = factBuilder.buildEnrichedContext(cleanQuery)
                 val reply = if (!enriched.directAnswer.isNullOrBlank()) {
                     enriched.directAnswer
                 } else {

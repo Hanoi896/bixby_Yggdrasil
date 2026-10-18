@@ -31,6 +31,7 @@ class FactContextBuilder private constructor(private val context: Context) {
         SECURITY_STATUS,    // 9대 영역 보안 및 암호화 볼트 점검
         MEMORY_SEARCH,      // 무닌 암호화 기억 DB 검색 (차량번호, 비밀번호 힌트 등)
         CALENDAR_SCHEDULE,  // 캘린더 일정
+        DEVICE_LOCATION,    // 실시간 GPS 및 역지오코딩 현재 위치/주소
         WEB_SEARCH,         // 온디바이스 Search Grounding (읽기 전용 실시간 팩트)
         DEVICE_ACTION,      // 절전 모드, 캐시 정리 등 시스템 조작
         GENERAL_CHAT        // 일반 대화
@@ -158,6 +159,17 @@ class FactContextBuilder private constructor(private val context: Context) {
                 )
             }
 
+            QueryIntent.DEVICE_LOCATION -> {
+                val locationProvider = com.yggdrasil.assistant.location.YggdrasilLocationProvider.getInstance(context)
+                val locSummary = locationProvider.getCurrentLocationSummary()
+                FactInjectionResult(
+                    intent = intent,
+                    systemPrompt = "당신은 갤럭시 온디바이스 개인 비서 Yggdrasil입니다. 사용자의 위치 질문에 실제 GPS 측정값과 주소를 토대로 정직하고 명확하게 답변하십시오.",
+                    enrichedUserPrompt = "현재 단말 위치 실측 정보:\n$locSummary\n\n질문: $userQuery",
+                    directAnswer = locSummary
+                )
+            }
+
             QueryIntent.DEVICE_ACTION -> {
                 FactInjectionResult(
                     intent = intent,
@@ -197,6 +209,7 @@ class FactContextBuilder private constructor(private val context: Context) {
             q.contains("보안") || q.contains("격리") || q.contains("암호화") || q.contains("킬스위치") -> QueryIntent.SECURITY_STATUS
             q.contains("일정") || q.contains("스케줄") || q.contains("캘린더") -> QueryIntent.CALENDAR_SCHEDULE
             q.contains("기억") || q.contains("메모") || (q.contains("찾아") || q.contains("알려")) && (q.contains("비번") || q.contains("번호") || q.contains("힌트")) -> QueryIntent.MEMORY_SEARCH
+            q.contains("위치") || q.contains("어디야") || q.contains("어디에") || q.contains("어디인지") || q.contains("지금 어디") || q.contains("내 위치") || q.contains("현재 위치") || q.contains("내위치") || q.contains("현재위치") -> QueryIntent.DEVICE_LOCATION
             q.contains("날씨") || q.contains("뉴스") || q.contains("검색") || q.contains("위키") || q.contains("주가") || q.contains("환율") || q.contains("누구") || q.contains("뭐야") || q.contains("뜻") -> QueryIntent.WEB_SEARCH
             q.contains("절전") || q.contains("압축") || q.contains("정리") || q.contains("화면") || q.contains("켜줘") || q.contains("꺼줘") -> QueryIntent.DEVICE_ACTION
             else -> QueryIntent.GENERAL_CHAT

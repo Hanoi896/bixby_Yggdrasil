@@ -584,6 +584,9 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                 }
             }
 
+            // 영타 오타 및 문장 부호("", ,, ?) 실시간 자동 보정
+            cleanCommand = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.enrichUserUtterance(cleanCommand)
+
             // 부르기만 하고 명령어가 없는 경우 ("자비스", "이그드라실")
             if (cleanCommand.isBlank()) {
                 val callName = if (customName.isNotBlank()) customName else "이그드라실"
@@ -591,6 +594,10 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                     responseTextView?.text = "네! 말씀하세요. 무엇을 도와드릴까요?"
                 }
                 return@launch
+            }
+
+            withContext(Dispatchers.Main) {
+                liveInputEditText?.setText(cleanCommand)
             }
 
             // 🌟 [기둥 3: 시각-기억 결합 맥락 복원기 (Contextual Resolution Engine)]

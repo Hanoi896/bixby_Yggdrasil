@@ -40,10 +40,24 @@ class YggdrasilAccessibilityService : AccessibilityService() {
 
     // 🛡️ 사용자 우선권(User Preemption): 화면 터치 감지 플래그 및 긴급 중단 리스너
     val isUserInterrupted = java.util.concurrent.atomic.AtomicBoolean(false)
+    val isAiAutomating = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val lastAiActionTime = java.util.concurrent.atomic.AtomicLong(0L)
     var onUserPreemptionListener: (() -> Unit)? = null
 
     fun resetPreemptionFlag() {
         isUserInterrupted.set(false)
+    }
+
+    fun setAiAutomating(automating: Boolean) {
+        isAiAutomating.set(automating)
+        if (automating) {
+            isUserInterrupted.set(false)
+            notifyAiActionDispatched()
+        }
+    }
+
+    fun notifyAiActionDispatched() {
+        lastAiActionTime.set(System.currentTimeMillis())
     }
 
     override fun onServiceConnected() {
@@ -69,11 +83,19 @@ class YggdrasilAccessibilityService : AccessibilityService() {
         if (event == null) return
         val eventType = event.eventType
 
-        // 1. 사용자 물리적 화면 터치(User Preemption) 0.01초 실시간 감지 -> AI 자동 조작 즉시 취소
-        if (eventType == AccessibilityEvent.TYPE_TOUCH_INTERACTION_START ||
-            eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-            isUserInterrupted.set(true)
-            onUserPreemptionListener?.invoke()
+        // 1. 사용자 물리적 화면 터치(User Preemption) 실시간 감지 -> AI 자동 조작 즉시 취소
+        // ⚠️ 주의: TYPE_VIEW_CLICKED는 AI의 performAction(CLICK)으로도 100% 발생하므로 인터럽트 판정에서 제외.
+        // AI가 제스처를 주입한 직후(600ms 이내)의 TYPE_TOUCH_INTERACTION_START는 AI 제스처이므로 필터링.
+        if (eventType == AccessibilityEvent.TYPE_TOUCH_INTERACTION_START) {
+            val now = System.currentTimeMillis()
+            val isRecentAiAction = (now - lastAiActionTime.get()) < 600L
+            if (!isRecentAiAction) {
+                android.util.Log.i("AccessibilityService", "🛑 사용자의 실제 화면 터치 감지 -> AI 조작 즉각 취소")
+                isUserInterrupted.set(true)
+                onUserPreemptionListener?.invoke()
+            } else {
+                android.util.Log.d("AccessibilityService", "ℹ️ AI 가상 제스처 시스템 터치 이벤트 필터링 통과")
+            }
         }
 
         // 2. 1회성 토스트, 스낵바 및 알림 상태 변경 이벤트 캡처
@@ -213,6 +235,7 @@ class YggdrasilAccessibilityService : AccessibilityService() {
      * (키보드 가림 회피: 클릭 전 부모 스크롤 컨테이너를 탐색하여 요소를 뷰포트 내로 스크롤 이동)
      */
     fun performClickOnNode(node: AccessibilityNodeInfo): Boolean {
+        notifyAiActionDispatched()
         ensureNodeVisibleInViewport(node)
 
         var current: AccessibilityNodeInfo? = node
@@ -317,6 +340,7 @@ class YggdrasilAccessibilityService : AccessibilityService() {
      * 지정된 화면 좌표 (x, y) 단일 탭 실행
      */
     fun tap(x: Float, y: Float, callback: ((Boolean) -> Unit)? = null) {
+        notifyAiActionDispatched()
         val path = Path().apply {
             moveTo(x, y)
         }
@@ -354,6 +378,7 @@ class YggdrasilAccessibilityService : AccessibilityService() {
      * 지정된 화면 좌표 (x, y) 롱 클릭 실행
      */
     fun longPress(x: Float, y: Float, durationMs: Long = 800, callback: ((Boolean) -> Unit)? = null) {
+        notifyAiActionDispatched()
         val path = Path().apply {
             moveTo(x, y)
         }
@@ -382,6 +407,7 @@ class YggdrasilAccessibilityService : AccessibilityService() {
         durationMs: Long = 300,
         callback: ((Boolean) -> Unit)? = null
     ) {
+        notifyAiActionDispatched()
         val path = Path().apply {
             moveTo(startX, startY)
             lineTo(endX, endY)

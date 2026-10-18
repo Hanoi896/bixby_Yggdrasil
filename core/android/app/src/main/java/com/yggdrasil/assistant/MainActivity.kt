@@ -120,8 +120,10 @@ class MainActivity : ComponentActivity() {
                     pendingTargetTab.value = null
                 },
                 onSendMessageToNpu = { userQuery ->
+                    // 영타 오타 및 문장 부호("", ,, ?) 실시간 자동 보정
+                    val enrichedUserQuery = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.enrichUserUtterance(userQuery)
                     val contextualResolver = com.yggdrasil.assistant.nlp.YggdrasilContextualResolver.getInstance(this@MainActivity)
-                    val query = contextualResolver.resolveDiscourseRepair(userQuery)
+                    val query = contextualResolver.resolveDiscourseRepair(enrichedUserQuery)
                     contextualResolver.recordLastCommand(query)
 
                     val planner = com.yggdrasil.assistant.voice.YggdrasilIntentPlanner.getInstance(this@MainActivity)

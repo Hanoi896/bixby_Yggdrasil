@@ -388,7 +388,12 @@ JSON 규격:
     }
 
     private fun extractTargetPerson(cmd: String): String {
-        val targetRegex = Regex("([가-힣a-zA-Z0-9]+)(에게|한테|방에)")
+        val isSelf = cmd.contains("나에게") || cmd.contains("나한테") || cmd.contains("내게") ||
+                     cmd.contains("나자신에게") || cmd.contains("나와의 채팅") || cmd.contains("나와의채팅") ||
+                     cmd.contains("내게로")
+        if (isSelf) return "나"
+
+        val targetRegex = Regex("([가-힣a-zA-Z0-9]+)(에게|한테|방에|께)")
         val match = targetRegex.find(cmd)
         return match?.groupValues?.get(1)?.trim() ?: "상대방"
     }
@@ -400,9 +405,11 @@ JSON 규격:
             return quoteMatch.groupValues[1].trim()
         }
 
-        if (cmd.contains("라고")) {
-            val beforeRago = cmd.substringBefore("라고")
-            val candidate = beforeRago.substringAfterLast(" ").trim()
+        if (cmd.contains("이라고") || cmd.contains("라고")) {
+            val delimiter = if (cmd.contains("이라고")) "이라고" else "라고"
+            val beforeRago = cmd.substringBefore(delimiter)
+            val trimmed = beforeRago.replace(Regex(".*(에게|한테|방에|께|에서|카카오톡|카톡|문자|메시지)"), "").trim()
+            val candidate = trimmed.ifBlank { beforeRago.substringAfterLast(" ").trim() }
             if (candidate.isNotBlank()) return candidate
         }
 
@@ -410,6 +417,7 @@ JSON 규격:
             cmd.contains("한테") -> cmd.substringAfter("한테")
             cmd.contains("에게") -> cmd.substringAfter("에게")
             cmd.contains("방에") -> cmd.substringAfter("방에")
+            cmd.contains("께") -> cmd.substringAfter("께")
             else -> cmd
         }
 
