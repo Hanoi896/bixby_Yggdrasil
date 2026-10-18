@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
         val vaultManager = AppStorageVaultManager.getInstance(this)
         val breakGlassManager = BreakGlassSecurityManager.getInstance(this)
         val modelSyncManager = ModelAutoSyncManager.getInstance(this)
+        com.yggdrasil.assistant.mcp.LocalMcpRegistry.getInstance(this)
 
         // 화면 꺼짐(Screen-off) 및 잠금화면 상태에서 빅스비 딥링크 호출 시 안정적 화면 표시 및 잠금 해제 요청
         configureShowOnLockScreen()
@@ -171,7 +172,19 @@ class MainActivity : ComponentActivity() {
                                 speakFeedback(factResult.directAnswer)
                                 factResult.directAnswer
                             }
-                            // 2. 텔레그램 메신저 전송/테스트 질의 처리
+                            // 2. 캘린더/일정 질의 처리 (Zero-Mock 실제 쿼리 직결)
+                            else if (query.contains("일정") || query.contains("캘린더") || query.contains("스케줄")) {
+                                val calendarManager = CalendarAndContactsManager.getInstance(this@MainActivity)
+                                val todayEvents = calendarManager.getTodayEvents()
+                                val msg = if (todayEvents.isNotEmpty()) {
+                                    "📅 오늘 일정 (${todayEvents.size}건):\n" + todayEvents.joinToString("\n") { "• ${it.title} (${it.timeString})" }
+                                } else {
+                                    "📅 오늘 등록된 일정이 없습니다."
+                                }
+                                speakFeedback(msg)
+                                msg
+                            }
+                            // 3. 텔레그램 메신저 전송/테스트 질의 처리
                             else if (query.contains("텔레그램") && (query.contains("테스트") || query.contains("전송") || query.contains("보내"))) {
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                     val messengerClient = SleipnirMessengerClient.getInstance(this@MainActivity)
@@ -183,7 +196,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
-                            // 3. 온디바이스 NPU 추론 (팩트 주입 + 환각 방지 절대 가드레일 강제) - Dispatchers.Default (Zero-ANR)
+                            // 4. 온디바이스 NPU 추론 (팩트 주입 + 환각 방지 절대 가드레일 강제) - Dispatchers.Default (Zero-ANR)
                             else {
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                                     val model = modelSyncManager.getActiveModelFile()
@@ -194,7 +207,9 @@ class MainActivity : ComponentActivity() {
                                         if (!svc.isRunning()) {
                                             svc.startLocalDaemon(model.absolutePath)
                                         }
-                                        val reply = svc.generateWithPersona(factResult.systemPrompt, factResult.enrichedUserPrompt)
+                                        val reply = svc.generateWithPersona(factResult.systemPrompt, factResult.enrichedUserPrompt).ifBlank {
+                                            svc.generate(userQuery)
+                                        }
                                         speakFeedback(reply)
                                         reply
                                     } else {

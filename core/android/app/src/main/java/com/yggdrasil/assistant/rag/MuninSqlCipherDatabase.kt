@@ -12,8 +12,9 @@ import android.util.LruCache
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SQLiteOpenHelper
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.UUID
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -79,6 +80,14 @@ class MuninSqlCipherDatabase(
         private const val PREF_GCM_IV = "gcm_iv"
         private const val GCM_TAG_LENGTH = 128
 
+        // 성능 최적화: 0-GC 한국어 불용어 Set 및 정적 정규식 사전 컴파일
+        private val KOREAN_PARTICLES = setOf(
+            "에게", "에서", "으로", "로써", "로서", "하고", "이나", "이나마", "부터", "까지",
+            "은", "는", "이", "가", "을", "를", "의", "와", "과", "에", "로"
+        )
+        private val NON_ALPHANUMERIC_REGEX = Regex("[^a-zA-Z0-9가-힣\\s]")
+        private val WHITESPACE_REGEX = Regex("\\s+")
+
         init {
             // SQLCipher 네이티브 공유 라이브러리(.so) 로드
             try {
@@ -91,6 +100,9 @@ class MuninSqlCipherDatabase(
 
     // LRU 인메모리 벡터 캐시 (BLOB 디스크 I/O 및 역직렬화 오버헤드 0% 최적화)
     private val vectorCache = LruCache<String, FloatArray>(500)
+
+    // 동시 쓰기 락 충돌 방지를 위한 업계 표준 공정 락 (Fair Lock)
+    private val writeLock = ReentrantLock(true)
 
     // Android KeyStore 기반 암호화 Passphrase 캐시
     @Volatile
@@ -210,6 +222,19 @@ class MuninSqlCipherDatabase(
         return getReadableDatabase(getOrCreateDbPassphrase())
     }
 
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        try {
+            // 업계 표준 WAL(Write-Ahead Logging) 모드 활성화 (읽기/쓰기 동시성 극대화)
+            db.rawExecSQL("PRAGMA journal_mode = WAL;")
+            // 동시 트랜잭션 경합 시 크래시 대신 최대 5초 대기
+            db.rawExecSQL("PRAGMA busy_timeout = 5000;")
+            db.rawExecSQL("PRAGMA synchronous = NORMAL;")
+        } catch (e: Exception) {
+            Log.w(TAG, "WAL 모드 설정 실패, 기본 모드로 동작", e)
+        }
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         val createQuery = """
             CREATE TABLE IF NOT EXISTS $TABLE_MEMORIES (
@@ -300,7 +325,7 @@ class MuninSqlCipherDatabase(
         category: String = "General",
         importance: Int = 1,
         isDialogue: Boolean = false
-    ): String {
+    ): String = writeLock.withLock {
         val db = getEncryptedWritableDb()
         val id = "mem-" + UUID.randomUUID().toString().take(8)
         val timestamp = java.time.Instant.now().toString()
@@ -328,7 +353,7 @@ class MuninSqlCipherDatabase(
      * 1차 인덱스 필터링 + LRU 캐시 + 벡터 내적 기반 초고속 시맨틱 검색
      */
     /**
-     * 한국어 조사/불용어 분리 및 고유명사/키워드 BM25 점수 산정
+     * 한국어 조사/불용어 분리 및 고유명사/키워드 BM25 점수 산정 (0-Allocation 비할당 루프 최적화)
      */
     private fun computeKoreanBm25Score(queryKeywords: List<String>, content: String): Float {
         if (queryKeywords.isEmpty() || content.isBlank()) return 0f
@@ -339,9 +364,9 @@ class MuninSqlCipherDatabase(
         for (kw in queryKeywords) {
             val weight = if (kw.length >= 3) 1.5f else 1.0f
             totalWeight += weight
-            if (lowerContent.contains(kw)) {
+            val occurrences = countOccurrences(lowerContent, kw)
+            if (occurrences > 0) {
                 // 키워드 출현 빈도 포화 함수 (TF / (TF + 1.2))
-                val occurrences = lowerContent.split(kw).size - 1
                 val tfScore = (occurrences * 2.2f) / (occurrences + 1.2f)
                 matchCount++
                 totalWeight += (tfScore * weight)
@@ -350,19 +375,30 @@ class MuninSqlCipherDatabase(
         return (matchCount.toFloat() / queryKeywords.size) * 0.7f + (totalWeight.coerceAtMost(3.0f) / 3.0f) * 0.3f
     }
 
+    private fun countOccurrences(source: String, target: String): Int {
+        if (target.isEmpty()) return 0
+        var count = 0
+        var idx = 0
+        while (true) {
+            idx = source.indexOf(target, idx)
+            if (idx == -1) break
+            count++
+            idx += target.length
+        }
+        return count
+    }
+
     private fun extractKoreanKeywords(text: String): List<String> {
-        val particles = setOf(
-            "에게", "에서", "으로", "로써", "로서", "하고", "이나", "이나마", "부터", "까지",
-            "은", "는", "이", "가", "을", "를", "의", "와", "과", "에", "로"
-        )
-        val tokens = text.lowercase().replace(Regex("[^a-zA-Z0-9가-힣\\s]"), " ").split("\\s+".toRegex())
+        val tokens = text.lowercase()
+            .replace(NON_ALPHANUMERIC_REGEX, " ")
+            .split(WHITESPACE_REGEX)
         val keywords = mutableListOf<String>()
 
         for (token in tokens) {
             val trimmed = token.trim()
             if (trimmed.length < 2) continue
             var stem = trimmed
-            for (p in particles) {
+            for (p in KOREAN_PARTICLES) {
                 if (stem.endsWith(p) && stem.length > p.length + 1) {
                     stem = stem.removeSuffix(p)
                     break
@@ -528,7 +564,7 @@ class MuninSqlCipherDatabase(
     // 감사 로그 해시 체인 영속화 메서드
     // ==========================================
 
-    fun insertAuditBlock(block: DbAuditBlock): Boolean {
+    fun insertAuditBlock(block: DbAuditBlock): Boolean = writeLock.withLock {
         val db = getEncryptedWritableDb()
         val values = ContentValues().apply {
             put(COL_AUDIT_INDEX, block.index)
@@ -583,7 +619,7 @@ class MuninSqlCipherDatabase(
     // 스마트 알림 영속화 메서드
     // ==========================================
 
-    fun insertNotification(noti: DbNotification): Long {
+    fun insertNotification(noti: DbNotification): Long = writeLock.withLock {
         val db = getEncryptedWritableDb()
         val values = ContentValues().apply {
             put(COL_NOTI_PKG, noti.packageName)

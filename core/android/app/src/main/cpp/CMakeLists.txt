@@ -17,11 +17,20 @@ set(GGML_VULKAN OFF CACHE BOOL "Disable Vulkan backend for Android NDK" FORCE)
 
 # 2. Qualcomm Hexagon HTP / QNN NPU 백엔드
 # QNN_SDK_ROOT 또는 HEXAGON_SDK_ROOT 환경변수 존재 시 libQnnHtp.so, libQnnSystem.so 물리적 바인딩
+# 또한 프로젝트 내부 jniLibs/arm64-v8a 경로에 QNN SDK 라이브러리가 물리적으로 배치된 경우 자동 바인딩
+set(LOCAL_JNILIBS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}")
+
 if (DEFINED ENV{QNN_SDK_ROOT} AND IS_DIRECTORY "$ENV{QNN_SDK_ROOT}")
     set(QNN_ROOT $ENV{QNN_SDK_ROOT})
     set(GGML_QNN ON CACHE BOOL "Enable Qualcomm QNN HTP NPU backend for Snapdragon 8 Elite" FORCE)
     include_directories(${QNN_ROOT}/include/QNN)
     link_directories(${QNN_ROOT}/lib/aarch64-android)
+    set(QNN_LIBS QnnHtp QnnSystem)
+    add_compile_definitions(GGML_USE_QNN=1)
+elseif (EXISTS "${LOCAL_JNILIBS_DIR}/libQnnHtp.so" AND EXISTS "${LOCAL_JNILIBS_DIR}/libQnnSystem.so")
+    set(GGML_QNN ON CACHE BOOL "Enable Qualcomm QNN HTP NPU backend via local jniLibs" FORCE)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include/QNN)
+    link_directories(${LOCAL_JNILIBS_DIR})
     set(QNN_LIBS QnnHtp QnnSystem)
     add_compile_definitions(GGML_USE_QNN=1)
 elseif (DEFINED ENV{HEXAGON_SDK_ROOT} AND IS_DIRECTORY "$ENV{HEXAGON_SDK_ROOT}")
@@ -36,11 +45,13 @@ else()
     set(QNN_LIBS "")
 endif()
 
-# Snapdragon 8 Elite 및 ARMv8.4-A 최적화
+# Snapdragon 8 Elite 및 ARMv8.4-A 최적화 & Android 15 16KB Page Size 강제 정렬
 if (${ANDROID_ABI} STREQUAL "arm64-v8a")
     set(GGML_OPENMP OFF CACHE BOOL "Disable OpenMP on Android for battery/thermal care" FORCE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -flto")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -flto")
+    # Android 15 및 S26 Ultra 16KB ELF Alignment 필수 플래그
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 endif()
 
 # llama.cpp 서브모듈 디렉터리 경로

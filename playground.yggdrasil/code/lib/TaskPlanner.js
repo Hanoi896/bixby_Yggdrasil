@@ -123,7 +123,7 @@ function mapClauseToStep(clause, stepIndex) {
       arguments: {
         platform: platform,
         recipient: recipient,
-        message: 'Yggdrasil 온디바이스 비서 전송 파일입니다.',
+        message: clause,
         attachmentPath: '$step_previous.outputZipPath' // 이전 스텝 결과 자동 바인딩 플레이스홀더
       }
     };
@@ -140,7 +140,7 @@ function mapClauseToStep(clause, stepIndex) {
       requiresVoiceConfirmation: true,
       arguments: {
         action: lower.indexOf('스크롤') >= 0 ? 'swipe' : 'click',
-        targetText: extractTargetLabel(clause) || '확인'
+        targetText: extractTargetLabel(clause) || clause.replace(/(?:화면|터치|눌러|클릭|스크롤|해줘)/g, '').trim() || '확인'
       }
     };
   }
@@ -156,8 +156,8 @@ function mapClauseToStep(clause, stepIndex) {
       requiresVoiceConfirmation: false,
       arguments: {
         action: 'create',
-        title: clause.replace(/(?:등록|저장|추가|해줘)/g, '').trim() || '새로운 일정',
-        startTime: new Date(Date.now() + 86400000).toISOString()
+        title: clause.replace(/(?:등록|저장|추가|해줘|일정|캘린더|약속|스케줄)/g, '').trim() || '새로운 일정',
+        startTime: extractScheduleTime(clause)
       }
     };
   }
@@ -272,4 +272,23 @@ function buildEmptyPlan(utterance) {
     planDescription: '단일 작업',
     steps: []
   };
+}
+
+function extractScheduleTime(text) {
+  const now = new Date();
+  if (text.indexOf('내일') >= 0) {
+    now.setDate(now.getDate() + 1);
+  } else if (text.indexOf('모레') >= 0) {
+    now.setDate(now.getDate() + 2);
+  }
+  const hourMatch = text.match(/(\d{1,2})\s*시/);
+  if (hourMatch) {
+    let hour = parseInt(hourMatch[1], 10);
+    if (text.indexOf('오후') >= 0 && hour < 12) hour += 12;
+    if (text.indexOf('오전') >= 0 && hour === 12) hour = 0;
+    now.setHours(hour, 0, 0, 0);
+  } else {
+    now.setHours(now.getHours() + 1, 0, 0, 0);
+  }
+  return now.toISOString();
 }

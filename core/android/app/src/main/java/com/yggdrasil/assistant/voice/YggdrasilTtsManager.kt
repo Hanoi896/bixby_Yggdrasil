@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * [YggdrasilTtsManager]
  * 온디바이스 고음질 음성 피드백(Text-to-Speech) 싱글톤 엔진.
  * 삼성 One UI 및 안드로이드 순정 고음질 한국어 음성 팩을 활용하여
- * 어시스턴트의 모든 답변과 액션 진행 상황을 0ms 지연으로 음성 출력한다.
+ * 어시스턴트의 모든 답변과 액션 진행 상황을 지체 없이 즉각 음성 출력한다.
  */
 class YggdrasilTtsManager private constructor(private val context: Context) {
 

@@ -456,9 +456,9 @@ class ScreenOperatorController(
      * 
      * 1. 관찰 (Observe): Accessibility 노드 트리 평탄화 수집 + FLAG_SECURE 보안 감지
      * 2. 추론 (Reason): 사용자 목표(userGoal)와 현재 화면 요소를 대조하여 다음 동작(CLICK, TYPE, SCROLL, FINISH) 결정
-     * 3. 행동 (Act): Node.ACTION_CLICK (0ms 우선) -> dispatchGesture 탭 폴백 -> 텍스트 주입
+     * 3. 행동 (Act): Node.ACTION_CLICK (직접 주입 우선) -> dispatchGesture 탭 폴백 -> 텍스트 주입
      * 4. 검증 및 대기 (Wait & Verify): UI 렌더링 변경 대기 및 전이 상태 검증
-     * 5. 반복/종료 (Loop / Complete): 목표 달성 시 성공 보고, 사용자 물리적 터치 시 0ms 즉각 중단(User Preemption)
+     * 5. 반복/종료 (Loop / Complete): 목표 달성 시 성공 보고, 사용자 물리적 터치 시 즉각 중단(User Preemption)
      */
     fun executeAutonomousActionPlan(
         userGoal: String,
@@ -480,7 +480,7 @@ class ScreenOperatorController(
             while (step < maxSteps) {
                 step++
 
-                // Fail-Safe: 사용자 물리적 터치 감지 시 즉각 중단 (0ms User Preemption)
+                // Fail-Safe: 사용자 물리적 터치 감지 시 즉각 중단 (User Preemption)
                 if (isInterrupted.get() || safetyGuardrail.isEmergencyStopped()) {
                     android.util.Log.w(TAG, "User Preemption: 사용자 물리 터치로 자율 조작 즉시 종료")
                     return ExecutionResult(false, "사용자가 화면을 직접 터치하여 자율 조작을 즉시 중단했습니다.")

@@ -6,7 +6,7 @@ import android.content.Context
  * [KoreanSemanticLexicon]
  * 한국어 고유 기초 문법(용언 원형 정규화, 조사 생략 복원) 및
  * 한국인 일상 구어체·축약어 온톨로지 엔진.
- * 0ms 온디바이스 지연으로 구어체 문장을 표준 의미 구조로 정규화한다.
+ * 온디바이스 인메모리 연산으로 구어체 문장을 표준 의미 구조로 정규화한다.
  */
 object KoreanSemanticLexicon {
 

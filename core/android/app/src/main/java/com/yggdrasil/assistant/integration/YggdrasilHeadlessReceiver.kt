@@ -13,7 +13,7 @@ import com.yggdrasil.assistant.llm.LocalLlmService
  * 
  * Android 10+ 백그라운드 액티비티 시작 제한(Background Activity Start Restriction)을 우회하여,
  * 화면을 켜지 않고도 포그라운드 상주 서비스(LocalLlmService)를 통해
- * 100% 온디바이스 NPU 추론 및 0ms 음성(TTS) 피드백을 즉시 출력합니다.
+ * 100% 온디바이스 NPU 추론 및 음성(TTS) 피드백을 즉시 출력합니다.
  */
 class YggdrasilHeadlessReceiver : BroadcastReceiver() {
 

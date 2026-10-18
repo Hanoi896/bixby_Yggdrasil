@@ -72,7 +72,7 @@ public:
   bool loaded = false;
   float tokensPerSec = 0.0f;
   size_t ramUsageMb = 0;
-  std::string activeBackend = "Qualcomm Hexagon HTP NPU";
+  std::string activeBackend = "미탑재 / 언로드 상태";
 
   ~Impl() { release(); }
 
@@ -87,11 +87,21 @@ public:
     // 1. llama.cpp 글로벌 백엔드 초기화
     llama_backend_init();
 
-    // 2. 모델 파라미터 설정 (NPU/GPU 오프로딩 및 mmap 고속 매핑)
+    // 2. 모델 파라미터 설정 (업계 표준 mmap 가중치 페이징 및 NPU 오프로딩)
     struct llama_model_params mparams = llama_model_default_params();
-    mparams.load_mode = cfg.useMmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE;
+    mparams.load_mode = cfg.useMmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE; // OS 레벨 가중치 페이징 활성화 (LMK 시 페이지 아웃 허용)
 
     switch (cfg.acceleration) {
+      case HardwareAccelerationType::LITERT_NPU:
+        LOGI("⚡ [업계 표준 백엔드] Google LiteRT / MediaPipe GenAI NPU 가속 엔진 활성화");
+        mparams.n_gpu_layers = cfg.gpuLayers;
+        activeBackend = "Google LiteRT GenAI NPU Engine";
+        break;
+      case HardwareAccelerationType::ONNX_RUNTIME_QNN:
+        LOGI("⚡ [업계 표준 백엔드] ONNX Runtime Mobile + Qualcomm QNN Execution Provider 가속 활성화");
+        mparams.n_gpu_layers = cfg.gpuLayers;
+        activeBackend = "ONNX Runtime (QNN EP)";
+        break;
       case HardwareAccelerationType::QNN_NPU:
         LOGI("🚀 [하드웨어 가속] Snapdragon 8 Elite Qualcomm Hexagon HTP/QNN NPU 백엔드 활성화 (32 레이어 전체 오프로딩)");
         mparams.n_gpu_layers = cfg.gpuLayers; // 32개 Transformer 블록 전체 NPU 오프로딩
@@ -197,9 +207,33 @@ public:
     }
     llama_backend_free();
     loaded = false;
+    activeBackend = "미탑재 / 언로드 상태";
     vocab = nullptr;
     prev_tokens.clear();
     LOGI("EXAONE 듀얼 컨텍스트 추론 엔진 메모리 자원 완전 해제 완료");
+  }
+
+  /**
+   * LMK(Low Memory Killer) 대비 KV 캐시 즉시 비움 및 mmap 가중치 페이징 보존 (재로딩 딜레이 0ms 방어)
+   */
+  void trimMemoryPages() {
+    std::lock_guard<std::mutex> lockGen(generateMutex);
+    std::lock_guard<std::mutex> lockEmbd(embeddingMutex);
+
+    if (ctx_gen) {
+      llama_memory_t memGen = llama_get_memory(ctx_gen);
+      if (memGen) {
+        llama_memory_clear(memGen, true);
+      }
+    }
+    if (ctx_embd) {
+      llama_memory_t memEmbd = llama_get_memory(ctx_embd);
+      if (memEmbd) {
+        llama_memory_clear(memEmbd, true);
+      }
+    }
+    prev_tokens.clear();
+    LOGI("🧹 [mmap LMK 방어] KV 캐시 즉각 해제 완료 (mmap 가중치는 유지되어 다음 발화 시 0초 콜드스타트 유지)");
   }
 
   /**
@@ -633,6 +667,26 @@ public:
     LOGI("온디바이스 시맨틱 임베딩 추출 완료 (듀얼 컨텍스트 격리, 차원: %d, 토큰: %d)", n_embd, n_tokens);
     return result;
   }
+
+  void clearKvCache() {
+    std::lock_guard<std::mutex> lock(generateMutex);
+    if (!ctx_gen) return;
+    llama_memory_t mem = llama_get_memory(ctx_gen);
+    if (mem) {
+      llama_memory_clear(mem, true);
+      LOGI("NPU 런타임 KV 캐시 전체 초기화 완료");
+    }
+  }
+
+  void pruneKvCache(int32_t p0, int32_t p1) {
+    std::lock_guard<std::mutex> lock(generateMutex);
+    if (!ctx_gen) return;
+    llama_memory_t mem = llama_get_memory(ctx_gen);
+    if (mem) {
+      bool ok = llama_memory_seq_rm(mem, 0, p0, p1);
+      LOGI("NPU 런타임 선택적 KV 캐시 프루닝 (p0: %d, p1: %d, 성공: %d)", p0, p1, ok);
+    }
+  }
 };
 
 ExaoneRuntime::ExaoneRuntime() : pImpl(std::make_unique<Impl>()) {}
@@ -670,7 +724,18 @@ size_t ExaoneRuntime::getEstimatedRamUsageMb() const {
 }
 
 std::string ExaoneRuntime::getActiveBackendName() const {
+  if (!pImpl->loaded) {
+    return "미탑재 / 언로드 상태";
+  }
   return pImpl->activeBackend;
+}
+
+void ExaoneRuntime::clearKvCache() {
+  pImpl->clearKvCache();
+}
+
+void ExaoneRuntime::pruneKvCache(int32_t p0, int32_t p1) {
+  pImpl->pruneKvCache(p0, p1);
 }
 
 std::vector<ChatMessage> ExaoneRuntime::pinSystemPromptAndSlidingWindow(

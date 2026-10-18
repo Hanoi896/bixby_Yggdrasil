@@ -64,7 +64,7 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
             )
         }
 
-        // 1단계: 0ms 초고속 패스트 패스 (단순 시스템 명령 및 명확한 단일 앱 실행)
+        // 1단계: 패스트 패스 (단순 시스템 명령 및 명확한 단일 앱 실행)
         val fastPass = tryFastPass(raw)
         if (fastPass != null) {
             Log.i(TAG, "⚡ [Fast-Pass 적중]: $raw -> ${fastPass.intent}")
@@ -78,7 +78,7 @@ class YggdrasilIntentPlanner private constructor(private val context: Context) {
     }
 
     /**
-     * 지연시간 0ms 초고속 룰 엔진
+     * 결정론적 규칙 기반 패스트 패스 엔진
      */
     private fun tryFastPass(cmd: String): PlannedAction? {
         val lower = cmd.lowercase().replace(" ", "")

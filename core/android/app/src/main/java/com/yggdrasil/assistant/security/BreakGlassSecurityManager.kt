@@ -21,7 +21,7 @@ class BreakGlassSecurityManager(private val context: Context) {
         private const val PREFS_NAME = "yggdrasil_breakglass_vault"
         private const val KEY_SALT = "master_salt_hex"
         private const val KEY_PASSWORD_HASH = "master_password_hash_hex"
-        private const val DEFAULT_INITIAL_PASS = "yggdrasil2026"
+        private const val KEY_IS_USER_SET = "master_password_user_set"
 
         @Volatile
         private var instance: BreakGlassSecurityManager? = null
@@ -55,15 +55,17 @@ class BreakGlassSecurityManager(private val context: Context) {
     var onEmergencyLockdownListener: ((String) -> Unit)? = null
 
     init {
-        // 최초 초기화 시 기본 솔트 및 초기 해시 생성
+        // 최초 초기화 시 암호학적 SecureRandom 기반 16자리 무작위 초기 패스프레이즈 동적 생성 (하드코딩 배제)
         if (!prefs.contains(KEY_SALT) || !prefs.contains(KEY_PASSWORD_HASH)) {
             val salt = generateRandomSalt(16)
-            val hash = hashWithSalt(DEFAULT_INITIAL_PASS, salt)
+            val initialPass = generateSecureRandomPassword(16)
+            val hash = hashWithSalt(initialPass, salt)
             prefs.edit()
                 .putString(KEY_SALT, salt)
                 .putString(KEY_PASSWORD_HASH, hash)
+                .putBoolean(KEY_IS_USER_SET, false)
                 .apply()
-            Log.i(TAG, "Break-Glass 초기 Salted 마스터 비밀번호 설정 완료")
+            Log.i(TAG, "Break-Glass 무작위 초기 솔트 및 해시 생성 완료 (사용자 커스텀 비밀번호 등록 권장)")
         }
     }
 
@@ -178,6 +180,14 @@ class BreakGlassSecurityManager(private val context: Context) {
         val saltBytes = ByteArray(byteLength)
         random.nextBytes(saltBytes)
         return saltBytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun generateSecureRandomPassword(length: Int): String {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%"
+        val random = SecureRandom()
+        return (1..length)
+            .map { chars[random.nextInt(chars.length)] }
+            .joinToString("")
     }
 
     private fun hashWithSalt(pass: String, salt: String): String {

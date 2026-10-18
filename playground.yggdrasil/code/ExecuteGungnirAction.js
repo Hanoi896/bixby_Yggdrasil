@@ -3,7 +3,7 @@
  * @description Gungnir 를 통해 IoT 제어·결제 등 치명적 작업을 실행 요청합니다.
  *
  * 100% Android Native Intent 직결:
- *  - 로컬 HTTP 소켓 통신을 전면 배제하고, 0ms 레이턴시의 App-Launch Intent URI를 생성합니다.
+ *  - 로컬 HTTP 소켓 통신을 전면 배제하고, 안전한 App-Launch Intent URI를 생성합니다.
  *  - 권한 레벨(L0~L10) 및 오딘(Odin) 정책에 따라 승인 대기 또는 즉각 실행으로 안전하게 핸드오프합니다.
  */
 import { buildActionUri, buildChatUri } from './lib/YggdrasilConfig.js';
@@ -26,7 +26,7 @@ export default function executeGungnirAction(input) {
   // L4 이상 고위험 작업: 오딘 승인 필요 (L4 이상은 챗/승인 UI로 안내, L1~L3는 네이티브 액션 직결)
   const requiresApproval = requestedLevel >= 4;
   const actionUri = requiresApproval
-    ? buildChatUri(`[🛡️ Odin 승인 대기] ${actionType} (보안 L${requestedLevel})`)
+    ? 'yggdrasil://chat?query=' + encodeURIComponent(`[🛡️ Odin 승인 대기] ${actionType} (보안 L${requestedLevel})`)
     : buildActionUri(actionType, actionType);
 
   const executionMessage = requiresApproval
@@ -38,7 +38,7 @@ export default function executeGungnirAction(input) {
     actionType: actionType,
     requiredLevel: requestedLevel,
     message: executionMessage,
-    signedHash: 'ODIN-NATIVE-AUTH-' + Date.now().toString(16),
+    signedHash: 'PENDING-ODIN-AUTH',
     realm: policy.realm,
     appLaunchUri: actionUri
   };

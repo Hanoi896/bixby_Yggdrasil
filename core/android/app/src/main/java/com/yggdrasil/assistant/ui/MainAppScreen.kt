@@ -208,6 +208,11 @@ fun MonoHomeTab(personaManager: UserPersonaManager) {
             }
         }
 
+        val llmService = remember { com.yggdrasil.assistant.llm.LocalLlmService.getInstance() }
+        val isLoaded = llmService?.isModelLoaded() ?: false
+        val backendName = remember(isLoaded) { llmService?.getActiveBackendName() ?: "미탑재 / 언로드 상태" }
+        val isBreakGlass = remember { com.yggdrasil.assistant.security.BreakGlassSecurityManager.isBreakGlassActive() }
+
         Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D0D)),
@@ -218,10 +223,10 @@ fun MonoHomeTab(personaManager: UserPersonaManager) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Text("온디바이스 시스템 현황", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(10.dp))
-                MonoStatusRow("NPU 엔진", "LG EXAONE 3.0 2.4B Q4_K_M")
-                MonoStatusRow("연산 환경", "Qualcomm NPU (100% 로컬)")
+                MonoStatusRow("NPU 엔진", if (isLoaded) "LG EXAONE 3.0 2.4B (가동 중)" else "모델 미탑재 (다운로드 필요)")
+                MonoStatusRow("연산 환경", backendName)
                 MonoStatusRow("RAM 점유", ramText)
-                MonoStatusRow("보안 상태", "L4 방어벽 가동 (SQLCipher)")
+                MonoStatusRow("보안 상태", if (isBreakGlass) "비상 락다운 해제 상태" else "L4 방어벽 가동 (SQLCipher)")
             }
         }
     }
@@ -242,26 +247,74 @@ fun MonoStatusRow(label: String, value: String) {
 
 @Composable
 fun MonoArchiveTab(vaultManager: AppStorageVaultManager) {
-    Column(
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var recentMemories by remember { mutableStateOf<List<com.yggdrasil.assistant.rag.MemoryRecord>>(emptyList()) }
+    var vaultFiles by remember { mutableStateOf<List<java.io.File>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val munin = com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context)
+                val memories = munin.loadRecentDialogues(15)
+                val files = vaultManager.getVaultDirectory().listFiles()?.toList() ?: emptyList()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    recentMemories = memories
+                    vaultFiles = files
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    androidx.compose.foundation.lazy.LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("기억 보관소", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text("SQLCipher 하드웨어 암호화로 보호되는 개인 대화 및 아카이브입니다.", color = Color(0xFF888888), fontSize = 12.sp)
+        item {
+            Text("기억 보관소", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("SQLCipher 하드웨어 암호화로 보호되는 개인 대화 및 아카이브입니다.", color = Color(0xFF888888), fontSize = 12.sp)
+        }
 
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D0D)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, Color(0xFF222222), RoundedCornerShape(12.dp))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("하드웨어 암호화 활성", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(6.dp))
-                Text("외부 접근 및 클라우드 동기화 0% 차단 상태입니다.", color = Color(0xFFCCCCCC), fontSize = 12.sp)
+        item {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D0D)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0xFF222222), RoundedCornerShape(12.dp))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("하드웨어 암호화 활성", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("저장된 기억: ${recentMemories.size} 건 | 암호화 볼트 파일: ${vaultFiles.size} 개", color = Color(0xFFCCCCCC), fontSize = 12.sp)
+                }
+            }
+        }
+
+        item {
+            Text("최근 보관된 암호화 기억", color = Color(0xFFAAAAAA), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+
+        if (recentMemories.isEmpty()) {
+            item {
+                Text("아직 저장된 암호화 기억이 없습니다. 대화를 나누면 자동 아카이빙됩니다.", color = Color(0xFF666666), fontSize = 12.sp)
+            }
+        } else {
+            items(recentMemories.size) { idx ->
+                val mem = recentMemories[idx]
+                Card(
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF1C1C1C), RoundedCornerShape(8.dp))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(mem.content.take(120), color = Color(0xFFDDDDDD), fontSize = 12.sp, maxLines = 3)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.KOREA).format(java.util.Date(mem.timestamp)), color = Color(0xFF666666), fontSize = 10.sp)
+                    }
+                }
             }
         }
     }

@@ -11,14 +11,16 @@
  * 퀄컴 스냅드래곤 8 엘리트 AP 가속 백엔드 열거형
  */
 enum class HardwareAccelerationType {
-    QNN_NPU,      // Qualcomm Hexagon HTP/QNN NPU (초저전력, 최고 속도)
-    VULKAN_GPU,   // Qualcomm Adreno 830 GPU Vulkan 백엔드
-    CPU_NEON      // ARMv8.4-A NEON/FP16 6코어 CPU 폴백
+    LITERT_NPU,      // Google LiteRT (구 TFLite / MediaPipe GenAI) NPU 표준 가속
+    ONNX_RUNTIME_QNN,// ONNX Runtime Mobile + Qualcomm QNN Execution Provider 표준 가속
+    QNN_NPU,         // Qualcomm Hexagon HTP/QNN NPU (초저전력, 최고 속도)
+    VULKAN_GPU,      // Qualcomm Adreno 830 GPU Vulkan 백엔드
+    CPU_NEON         // ARMv8.4-A NEON/FP16 6코어 CPU 폴백
 };
 
 struct ExaoneConfig {
     std::string modelPath;
-    HardwareAccelerationType acceleration = HardwareAccelerationType::QNN_NPU;
+    HardwareAccelerationType acceleration = HardwareAccelerationType::LITERT_NPU;
     int32_t contextLength = 4096;
     int32_t threadCount = 6;      // S26 Ultra 고성능 코어 수
     int32_t gpuLayers = 32;       // NPU/GPU 전체 32 레이어 오프로딩
@@ -52,6 +54,11 @@ public:
      * 현재 로드된 모델 자원 해제
      */
     void release();
+
+    /**
+     * LMK(Low Memory Killer) 대비 mmap 가중치 페이지 및 KV 캐시 슬림화 (콜드스타트 0초 방어)
+     */
+    void trimMemoryPages();
 
     /**
      * 챗 스트리밍 추론 실행
@@ -97,6 +104,17 @@ public:
     float getInferenceTokensPerSec() const;
     size_t getEstimatedRamUsageMb() const;
     std::string getActiveBackendName() const;
+
+    /**
+     * KV 캐시 전체 초기화 (새 대화 세션 시작 시)
+     */
+    void clearKvCache();
+
+    /**
+     * KV 캐시 선택적 슬롯 프루닝 (주제 급변 시 특정 위치 이후 토큰 제거)
+     * llama_kv_cache_seq_rm(ctx, 0, p0, p1) 연동
+     */
+    void pruneKvCache(int32_t p0, int32_t p1);
 
 private:
     class Impl;

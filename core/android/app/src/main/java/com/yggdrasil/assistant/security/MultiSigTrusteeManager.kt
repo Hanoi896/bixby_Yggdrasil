@@ -51,11 +51,39 @@ class MultiSigTrusteeManager {
     private val activeSessions = mutableMapOf<String, MultiSigSession>()
     private var requiredThresholdM: Int = 2
 
-    init {
-        // 실제 표준 X.509 포맷 Ed25519/ECDSA 64-Byte Public Key Mock이 아닌 실제 서명 지원 공개키 등록
-        trustees.add(Trustee("trustee-01", "소유자 보조 스마트폰", "302a300506032b6570032100a1b2c3d4e5f60718293a4b5c6d7e8f00112233445566778899aabbccddeeff00", "Galaxy Tab S10"))
-        trustees.add(Trustee("trustee-02", "가족/신뢰 관리자", "302a300506032b6570032100f6e5d4c3b2a100112233445566778899aabbccddeeff00112233445566778899", "Galaxy Z Fold6"))
-        trustees.add(Trustee("trustee-03", "하드웨어 보안 키", "302a300506032b6570032100112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00", "YubiKey 5C"))
+    /**
+     * 신뢰인(Trustee) 동적 등록 (하드코딩 배제)
+     */
+    @Synchronized
+    fun registerTrustee(trustee: Trustee): Boolean {
+        if (trustee.id.isBlank() || trustee.publicKeyHex.isBlank()) return false
+        val exists = trustees.any { it.id == trustee.id }
+        if (exists) {
+            Log.w(TAG, "이미 등록된 신뢰인 ID: ${trustee.id}")
+            return false
+        }
+        trustees.add(trustee)
+        Log.i(TAG, "신규 신뢰인 등록 완료: ${trustee.name} (${trustee.id})")
+        return true
+    }
+
+    /**
+     * 신뢰인 등록 해제
+     */
+    @Synchronized
+    fun unregisterTrustee(trusteeId: String): Boolean {
+        val removed = trustees.removeAll { it.id == trusteeId }
+        if (removed) {
+            Log.i(TAG, "신뢰인 등록 해제: $trusteeId")
+        }
+        return removed
+    }
+
+    /**
+     * M-of-N 서명 임계치 설정
+     */
+    fun setRequiredThresholdM(m: Int) {
+        requiredThresholdM = m.coerceAtLeast(1)
     }
 
     /**

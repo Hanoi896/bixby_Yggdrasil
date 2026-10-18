@@ -563,9 +563,6 @@ class AutoOperatorManager private constructor(private val context: Context) {
         service: YggdrasilAccessibilityService,
         keyword: String
     ): android.view.accessibility.AccessibilityNodeInfo? {
-        val root = service.rootInActiveWindow ?: return null
-        val targetLower = keyword.lowercase().replace(" ", "")
-
         // 1. 직접 텍스트 매칭
         val textMatches = service.findNodesByText(keyword)
         val clickable = textMatches.firstOrNull { it.isClickable }
@@ -579,40 +576,48 @@ class AutoOperatorManager private constructor(private val context: Context) {
             return first
         }
 
-        // 2. 전체 노드 트리 재귀 탐색 후 비매칭 노드 즉시 자원 반환
-        val allNodes = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
-        collectAllNodesRecursive(root, allNodes)
+        // 2. 텍스트 직접 매칭 실패 시 온디맨드로 루트 노드 획득 및 DFS 조기 반환 탐색 (0-Allocation)
+        val root = service.rootInActiveWindow ?: return null
+        val targetLower = keyword.lowercase().replace(" ", "")
 
-        var matchedNode: android.view.accessibility.AccessibilityNodeInfo? = null
-        for (node in allNodes) {
-            if (matchedNode == null) {
-                val text = node.text?.toString()?.lowercase()?.replace(" ", "") ?: ""
-                val desc = node.contentDescription?.toString()?.lowercase()?.replace(" ", "") ?: ""
-                val viewId = node.viewIdResourceName?.lowercase() ?: ""
-
-                if (text.contains(targetLower) || desc.contains(targetLower) || viewId.contains(targetLower)) {
-                    matchedNode = node
-                    continue
-                }
-            }
+        val matchedNode = findNodeDfs(root, targetLower)
+        if (matchedNode == null) {
             try {
-                node.recycle()
+                root.recycle()
             } catch (_: Exception) {}
         }
         return matchedNode
     }
 
-    private fun collectAllNodesRecursive(
+    private fun findNodeDfs(
         node: android.view.accessibility.AccessibilityNodeInfo,
-        outList: MutableList<android.view.accessibility.AccessibilityNodeInfo>
-    ) {
-        outList.add(node)
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                collectAllNodesRecursive(child, outList)
-            }
+        targetLower: String
+    ): android.view.accessibility.AccessibilityNodeInfo? {
+        val text = node.text?.toString()
+        val desc = node.contentDescription?.toString()
+        val viewId = node.viewIdResourceName
+
+        if (matchesTarget(text, targetLower) || matchesTarget(desc, targetLower) || matchesTarget(viewId, targetLower)) {
+            return node
         }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val match = findNodeDfs(child, targetLower)
+            if (match != null) {
+                return match
+            }
+            try {
+                child.recycle()
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
+    private fun matchesTarget(source: String?, targetLower: String): Boolean {
+        if (source == null) return false
+        val s = source.lowercase()
+        return s.contains(targetLower) || s.replace(" ", "").contains(targetLower)
     }
 
     /**

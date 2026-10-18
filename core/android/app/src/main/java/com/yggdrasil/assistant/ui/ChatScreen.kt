@@ -58,11 +58,20 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val profile = remember { personaManager.getProfile() }
+    val hapticManager = remember { HapticFeedbackManager.getInstance(context) }
+    val sessionManager = remember { ChatSessionManager.getInstance(context) }
 
+    var currentMode by remember { mutableStateOf(AssistantMode.CHAT) }
+    var selectedPreset by remember { mutableStateOf("Flash") }
     var inputText by remember { mutableStateOf("") }
     var isThinking by remember { mutableStateOf(false) }
 
-    // 기본 첫인사 메시지
+    // 세션 관리
+    var sessions by remember { mutableStateOf(sessionManager.getSortedSessions()) }
+    var activeSession by remember { mutableStateOf(sessions.firstOrNull() ?: sessionManager.createNewSession()) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    // 대화 메시지 상태
     val messages = remember {
         mutableStateListOf(
             ChatMessage(
@@ -72,40 +81,28 @@ fun ChatScreen(
         )
     }
 
-    // 화면 이탈(탭 전환 등) 시 재생 중이던 음성 TTS 즉시 중단
+    fun startNewChat() {
+        hapticManager.performActionClick()
+        com.yggdrasil.assistant.llm.LocalLlmService.getInstance()?.clearKvCache()
+        val newSession = sessionManager.createNewSession()
+        sessions = sessionManager.getSortedSessions()
+        activeSession = newSession
+        messages.clear()
+        messages.add(
+            ChatMessage(
+                sender = SenderType.ASSISTANT,
+                text = "${profile.userCallName}, 새로운 대화가 시작되었습니다. 무엇을 도와드릴까요?"
+            )
+        )
+        coroutineScope.launch { drawerState.close() }
+    }
+
+    // 화면 이탈 시 재생 중이던 음성 TTS 즉시 중단
     DisposableEffect(Unit) {
         onDispose {
             try {
                 com.yggdrasil.assistant.voice.YggdrasilTtsManager.getInstance(context).stop()
             } catch (_: Exception) {}
-        }
-    }
-
-    // 앱 구동 시 Munin SQLCipher 암호화 DB에서 직전 대화 기록 30건 자동 복원 (기억 영속화)
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val munin = com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context)
-            val history = munin.loadRecentDialogues(30)
-            if (history.isNotEmpty()) {
-                val loaded = mutableListOf<ChatMessage>()
-                for (mem in history) {
-                    val lines = mem.content.split("\n")
-                    val userLine = lines.firstOrNull { it.startsWith("[사용자] ") }?.removePrefix("[사용자] ")
-                    val assistantLine = lines.firstOrNull { it.startsWith("[Yggdrasil] ") }?.removePrefix("[Yggdrasil] ")
-                    if (!userLine.isNullOrBlank()) {
-                        loaded.add(ChatMessage(sender = SenderType.USER, text = userLine, timestamp = mem.timestamp))
-                    }
-                    if (!assistantLine.isNullOrBlank()) {
-                        loaded.add(ChatMessage(sender = SenderType.ASSISTANT, text = assistantLine, timestamp = mem.timestamp))
-                    }
-                }
-                if (loaded.isNotEmpty()) {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        messages.clear()
-                        messages.addAll(loaded)
-                    }
-                }
-            }
         }
     }
 
@@ -120,21 +117,33 @@ fun ChatScreen(
         val trimmed = text.trim()
         if (trimmed.isEmpty() || isThinking) return
 
+        hapticManager.performActionClick()
         messages.add(ChatMessage(sender = SenderType.USER, text = trimmed))
         inputText = ""
         isThinking = true
+
+        // 세션 첫 대화 시 세션 제목 자동 업데이트
+        if (messages.size <= 3 && activeSession.title == "새 대화") {
+            val autoTitle = trimmed.take(16)
+            sessionManager.updateTitle(activeSession.id, autoTitle)
+            sessions = sessionManager.getSortedSessions()
+        }
 
         coroutineScope.launch {
             listState.animateScrollToItem(messages.size - 1)
 
             val finalReply = if (onSendMessageToNpuStream != null) {
-                // 실시간 스트리밍 타자기 효과: 어시스턴트 버블을 먼저 생성한 후 토큰이 도착할 때마다 텍스트 실시간 갱신
                 val assistantMsg = ChatMessage(sender = SenderType.ASSISTANT, text = "")
                 messages.add(assistantMsg)
                 val targetIndex = messages.size - 1
                 val accumulated = StringBuilder()
+                var firstToken = true
 
                 val result = onSendMessageToNpuStream(trimmed) { token ->
+                    if (firstToken) {
+                        hapticManager.performTokenTick()
+                        firstToken = false
+                    }
                     coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                         accumulated.append(token)
                         if (targetIndex in messages.indices) {
@@ -156,14 +165,14 @@ fun ChatScreen(
             isThinking = false
             listState.animateScrollToItem(messages.size - 1)
 
-            // Munin AES-256 SQLCipher 암호화 DB에 실시간 대화 아카이빙 (RAG 영구 기억 연동)
+            // Munin AES-256 SQLCipher 암호화 DB에 실시간 대화 아카이빙
             launch(kotlinx.coroutines.Dispatchers.IO) {
                 com.yggdrasil.assistant.rag.MuninRagManager.getInstance(context).archiveDialogue(trimmed, finalReply)
             }
         }
     }
 
-    // 빅스비 캡슐 app-launch 딥링크(yggdrasil://chat?query=...)로부터 전달된 발화 자동 전송
+    // 빅스비 캡슐 app-launch 딥링크 수신
     LaunchedEffect(pendingQuery) {
         val query = pendingQuery?.trim()
         if (!query.isNullOrEmpty()) {
@@ -172,139 +181,142 @@ fun ChatScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            profile.aiName,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Color.White
-                        )
-                        Text(
-                            "온디바이스 EXAONE 3.0 • 100% 로컬 보안",
-                            fontSize = 11.sp,
-                            color = Color(0xFF777777)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF000000),
-                    titleContentColor = Color.White
-                ),
-                modifier = Modifier.border(1.dp, Color(0xFF161616), RoundedCornerShape(0.dp))
-            )
-        },
-        containerColor = Color(0xFF000000)
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            // 1. 대화 메시지 리스트
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = Color(0xFF121212),
+                modifier = Modifier.width(280.dp)
             ) {
-                items(messages, key = { it.id }) { msg ->
-                    ChatBubbleItem(msg = msg, aiName = profile.aiName)
-                }
-
-                if (isThinking) {
-                    item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 8.dp, top = 4.dp)
-                        ) {
-                            Text(
-                                "AI가 생각 중입니다...",
-                                color = Color(0xFF666666),
-                                fontSize = 12.sp
+                ChatHistoryDrawer(
+                    sessions = sessions,
+                    activeSessionId = activeSession.id,
+                    onSessionSelected = { session ->
+                        activeSession = session
+                        coroutineScope.launch { drawerState.close() }
+                    },
+                    onNewChatClicked = { startNewChat() },
+                    onTogglePin = { id ->
+                        sessionManager.togglePin(id)
+                        sessions = sessionManager.getSortedSessions()
+                    },
+                    onToggleFlag = { id ->
+                        sessionManager.toggleFlag(id)
+                        sessions = sessionManager.getSortedSessions()
+                    }
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.Menu,
+                                contentDescription = "히스토리 서랍",
+                                tint = Color.White
                             )
                         }
-                    }
-                }
-            }
-
-            // 2. 퀵 추천 칩 목록
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(quickChips) { chip ->
-                    Box(
-                        modifier = Modifier
-                            .border(1.dp, Color(0xFF262626), RoundedCornerShape(16.dp))
-                            .background(Color(0xFF0D0D0D), RoundedCornerShape(16.dp))
-                            .clickable { sendMessage(chip) }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(chip, color = Color(0xFFCCCCCC), fontSize = 12.sp)
-                    }
-                }
-            }
-
-            // 3. 하단 Black & White 입력 바 (키보드 연동 imePadding 적용)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .border(1.dp, Color(0xFF1A1A1A), RoundedCornerShape(0.dp))
-                    .background(Color(0xFF000000))
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    placeholder = {
-                        Text("메시지를 입력하세요...", color = Color(0xFF555555), fontSize = 14.sp)
                     },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = {
-                        if (inputText.isNotBlank() && !isThinking) {
-                            sendMessage(inputText)
+                    title = {
+                        // 사진 3: 중앙 [ 채팅 | 작업 ] 듀얼 세그먼트 스위치
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            ModeSegmentedSwitch(
+                                currentMode = currentMode,
+                                onModeChanged = { mode ->
+                                    hapticManager.performActionClick()
+                                    currentMode = mode
+                                }
+                            )
                         }
-                    }),
+                    },
+                    actions = {
+                        // 사진 1: 상단 우측 새 채팅 버튼
+                        NewChatButton(
+                            onClick = { startNewChat() },
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color(0xFF000000),
+                        titleContentColor = Color.White
+                    ),
+                    modifier = Modifier.border(1.dp, Color(0xFF161616), RoundedCornerShape(0.dp))
+                )
+            },
+            containerColor = Color(0xFF000000)
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                // 1. 대화 메시지 리스트
+                LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(end = 10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF444444),
-                        unfocusedBorderColor = Color(0xFF222222),
-                        cursorColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(24.dp),
-                    maxLines = 4
-                )
-
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(if (inputText.isNotBlank()) Color.White else Color(0xFF222222), CircleShape)
-                        .clickable(enabled = inputText.isNotBlank() && !isThinking) {
-                            sendMessage(inputText)
-                        },
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Icon(
-                        Icons.Default.ArrowUpward,
-                        contentDescription = "전송",
-                        tint = if (inputText.isNotBlank()) Color.Black else Color(0xFF555555),
-                        modifier = Modifier.size(20.dp)
-                    )
+                    items(messages, key = { it.id }) { msg ->
+                        ChatBubbleItem(msg = msg, aiName = profile.aiName)
+                    }
+
+                    if (isThinking) {
+                        item {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(start = 8.dp, top = 4.dp)
+                            ) {
+                                Text(
+                                    "AI가 생각 중입니다...",
+                                    color = Color(0xFF666666),
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
                 }
+
+                // 2. 퀵 추천 칩 목록
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(quickChips) { chip ->
+                        Box(
+                            modifier = Modifier
+                                .border(1.dp, Color(0xFF262626), RoundedCornerShape(16.dp))
+                                .background(Color(0xFF0D0D0D), RoundedCornerShape(16.dp))
+                                .clickable { sendMessage(chip) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(chip, color = Color(0xFFCCCCCC), fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                // 3. 사진 4: 차세대 프로페셔널 액션 도크 입력 바 (키보드 imePadding 연동)
+                ActionDockInputBar(
+                    inputText = inputText,
+                    onInputTextChanged = { inputText = it },
+                    onSendMessage = { sendMessage(it) },
+                    selectedPreset = selectedPreset,
+                    onPresetChanged = { selectedPreset = it },
+                    onAttachClicked = {
+                        hapticManager.performActionClick()
+                    },
+                    onVoiceClicked = {
+                        hapticManager.performActionClick()
+                    },
+                    modifier = Modifier.imePadding()
+                )
             }
         }
     }
@@ -351,8 +363,15 @@ fun ChatBubbleItem(msg: ChatMessage, aiName: String) {
                 )
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
+            val annotatedText = remember(msg.text, isUser) {
+                StreamingMarkdownSpanBuilder.buildAnnotatedMarkdown(
+                    rawText = msg.text,
+                    textColor = if (isUser) Color.Black else Color.White,
+                    isUser = isUser
+                )
+            }
             Text(
-                text = msg.text,
+                text = annotatedText,
                 color = if (isUser) Color.Black else Color.White,
                 fontSize = 14.sp,
                 lineHeight = 20.sp

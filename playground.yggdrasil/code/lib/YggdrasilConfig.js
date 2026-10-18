@@ -8,7 +8,7 @@ export const IS_DEBUG = false;
 
 export const LLM_MODEL = 'EXAONE-3.0-2.4B-Instruct';
 
-// Android Native Intent 딥링크 스키마 설정 (100% 네이티브 직결, 지연시간 0ms)
+// Android Native Intent 딥링크 스키마 설정 (100% 네이티브 직결, 저지연 인텐트 전달)
 export const DEEP_LINK_SCHEME = 'yggdrasil';
 
 /**

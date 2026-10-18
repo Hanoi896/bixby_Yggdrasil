@@ -102,6 +102,17 @@ Java_com_yggdrasil_assistant_llm_LocalLlmService_releaseEngineNative(
     }
 }
 
+JNIEXPORT void JNICALL
+Java_com_yggdrasil_assistant_llm_LocalLlmService_trimMemoryNative(
+    JNIEnv * /* env */,
+    jobject /* this */
+) {
+    if (g_runtime && g_runtime->isLoaded()) {
+        g_runtime->trimMemoryPages();
+        LOGI("JNI: LMK 대응 mmap 가중치 슬림화 및 KV 캐시 회수 완료");
+    }
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_yggdrasil_assistant_llm_LocalLlmService_generateTextNative(
     JNIEnv *env,
@@ -402,6 +413,48 @@ Java_com_yggdrasil_assistant_rag_MuninEmbeddingEngine_computeEmbeddingNative(
     jstring text_
 ) {
     return computeEmbeddingInternal(env, text_);
+}
+
+JNIEXPORT void JNICALL
+Java_com_yggdrasil_assistant_llm_LocalLlmService_clearKvCacheNative(
+    JNIEnv * /* env */,
+    jobject /* this */
+) {
+    if (g_runtime) {
+        g_runtime->clearKvCache();
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_yggdrasil_assistant_llm_LocalLlmService_pruneKvCacheNative(
+    JNIEnv * /* env */,
+    jobject /* this */,
+    jint p0,
+    jint p1
+) {
+    if (g_runtime) {
+        g_runtime->pruneKvCache(static_cast<int32_t>(p0), static_cast<int32_t>(p1));
+    }
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_yggdrasil_assistant_llm_LocalLlmService_getActiveBackendNameNative(
+    JNIEnv *env,
+    jobject /* this */
+) {
+    if (g_runtime && g_runtime->isLoaded()) {
+        std::string name = g_runtime->getActiveBackendName();
+        return env->NewStringUTF(name.c_str());
+    }
+    return env->NewStringUTF("미탑재 / 언로드 상태");
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_yggdrasil_assistant_llm_LocalLlmService_isModelLoadedNative(
+    JNIEnv * /* env */,
+    jobject /* this */
+) {
+    return (g_runtime && g_runtime->isLoaded()) ? JNI_TRUE : JNI_FALSE;
 }
 
 }

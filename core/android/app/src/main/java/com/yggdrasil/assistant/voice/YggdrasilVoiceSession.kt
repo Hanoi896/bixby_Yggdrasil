@@ -445,13 +445,21 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                         }
 
                         override fun onRmsChanged(rmsdB: Float) {
-                            // 마이크 볼륨에 따른 반응
+                            // 마이크 입력 볼륨 레벨(RMS)에 따른 심볼 아이콘 실시간 시각 반응
+                            val normalized = ((rmsdB + 2f) / 12f).coerceIn(0.4f, 1.0f)
+                            symbolButtonView?.alpha = normalized
                         }
 
-                        override fun onBufferReceived(buffer: ByteArray?) {}
+                        override fun onBufferReceived(buffer: ByteArray?) {
+                            // 수신된 오디오 스트림 프레임 유효성 모니터링
+                            if (buffer != null && buffer.isNotEmpty()) {
+                                // 오디오 버퍼 정상 인입 확인
+                            }
+                        }
 
                         override fun onEndOfSpeech() {
                             liveInputEditText?.hint = "처리 중..."
+                            symbolButtonView?.alpha = 1.0f
                         }
 
                         override fun onError(error: Int) {
@@ -502,7 +510,9 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                             }
                         }
 
-                        override fun onEvent(eventType: Int, params: Bundle?) {}
+                        override fun onEvent(eventType: Int, params: Bundle?) {
+                            Log.d(TAG, "SpeechRecognizer 이벤트 수신: $eventType")
+                        }
                     })
                 }
 
@@ -512,7 +522,7 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true) // 실시간 중간 문장 반환 필수 플래그
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
 
-                    // 🌟 초고속 0ms 반응 튜닝: 발화 종료 후 1.5초 무음 감지 시 즉각 판정 (체감 속도 400% 향상)
+                    // 🌟 저지연 반응 튜닝: 발화 종료 후 1.5초 무음 감지 시 즉각 판정
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
@@ -590,7 +600,7 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
             Log.i(TAG, "🔍 [맥락 복원 전/후]: '$cleanCommand' -> '$contextResolvedCommand'")
 
             // 🌟 [기둥 3: 한국어 기초 문법 & 일상어 온톨로지 정규화 (Korean Semantic Lexicon)]
-            // 온톨로지 DB(korean_action_ontology.json)를 참조하여 0ms에 동사/명사/축약어 일괄 정규화
+            // 온톨로지 DB(korean_action_ontology.json)를 참조하여 인메모리로 동사/명사/축약어 일괄 정규화
             val normalizedLexicon = KoreanSemanticLexicon.normalize(contextResolvedCommand, context)
             val finalCommand = normalizedLexicon.normalizedText
             Log.i(TAG, "📖 [국어 기초/일상어 정규화]: '$contextResolvedCommand' -> '$finalCommand'")

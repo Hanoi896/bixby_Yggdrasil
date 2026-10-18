@@ -4,7 +4,7 @@
  *
  * 100% Native 직결:
  *  - 죽은 127.0.0.1:8080 소켓 호출을 영구 제거하고,
- *  - 온디바이스 NPU 지속 학습 기반 성장 지표를 0ms로 즉각 렌더링합니다.
+ *  - 단말기 네이티브 앱의 실시간 성장 지표 화면으로 직결합니다.
  */
 import { TREE_STAGES, STAGE_KOREAN_NAME, STAGE_GUARDIAN } from './lib/YggdrasilConstants.js';
 

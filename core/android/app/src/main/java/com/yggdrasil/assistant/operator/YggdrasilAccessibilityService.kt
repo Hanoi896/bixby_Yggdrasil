@@ -202,9 +202,12 @@ class YggdrasilAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 특정 노드 또는 상위 clickable 부모 노드에 직접 ACTION_CLICK 이벤트 주입 (0ms 고속 실행)
+     * 특정 노드 또는 상위 clickable 부모 노드에 직접 ACTION_CLICK 이벤트 주입
+     * (키보드 가림 회피: 클릭 전 부모 스크롤 컨테이너를 탐색하여 요소를 뷰포트 내로 스크롤 이동)
      */
     fun performClickOnNode(node: AccessibilityNodeInfo): Boolean {
+        ensureNodeVisibleInViewport(node)
+
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
             if (current.isClickable) {
@@ -214,6 +217,35 @@ class YggdrasilAccessibilityService : AccessibilityService() {
         }
         // clickable 플래그가 없더라도 대상 노드에 강제 ACTION_CLICK 시도
         return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    /**
+     * 가상 키보드(IME) 또는 화면 밖 가림 방지 업계 표준 최선책 UX:
+     * 키보드를 닫지 않고 대상 요소를 시야 범위(Viewport)로 안전하게 스크롤 이동
+     */
+    fun ensureNodeVisibleInViewport(node: AccessibilityNodeInfo): Boolean {
+        // 1. Android 표준 ACTION_SHOW_ON_SCREEN 시도
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            if (node.actionList.any { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id }) {
+                if (node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id)) {
+                    return true
+                }
+            }
+        }
+
+        // 2. 부모 스크롤 가능 컨테이너 탐색 후 ACTION_SCROLL_FORWARD 주입
+        var parent = node.parent
+        while (parent != null) {
+            if (parent.isScrollable) {
+                val scrolled = parent.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                if (scrolled) {
+                    try { Thread.sleep(80) } catch (_: Exception) {}
+                    return true
+                }
+            }
+            parent = parent.parent
+        }
+        return false
     }
 
     /**

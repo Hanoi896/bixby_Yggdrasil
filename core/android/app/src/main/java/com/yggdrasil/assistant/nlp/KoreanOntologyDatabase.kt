@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
  * [KoreanOntologyDatabase]
  * 한국어 행동-엔티티 온톨로지 온디바이스 데이터베이스 엔진.
  * 
- * 1. 0ms 인메모리 역색인(Inverted Index):
+ * 1. 인메모리 역색인(Inverted Index):
  *    - 구어체/축약어/은어 ➔ 표준 엔티티(앱/서비스)
  *    - 수많은 한국어 동사 활용형/어간 ➔ 표준 행동(Action)
  *    - 지시 대명사 ➔ 목표 카테고리(시각/기억 참조용)
@@ -177,7 +177,7 @@ class KoreanOntologyDatabase private constructor(private val context: Context) {
         }
     }
 
-    // --- 초고속 0ms 질의 인터페이스 ---
+    // --- 인메모리 질의 인터페이스 ---
 
     fun getCanonicalEntity(alias: String): String? = aliasToCanonicalMap[alias]
 

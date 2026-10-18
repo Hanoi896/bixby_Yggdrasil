@@ -76,7 +76,9 @@ class LocalLlmService : Service() {
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.KOREAN
                 tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
+                    override fun onStart(utteranceId: String?) {
+                        android.util.Log.d("LocalLlmService", "음성 TTS 발화 시작: $utteranceId")
+                    }
                     override fun onDone(utteranceId: String?) {
                         releaseWakeLockSafely()
                     }
@@ -153,7 +155,7 @@ class LocalLlmService : Service() {
     }
 
     /**
-     * 화면을 켜지 않고 백그라운드에서 NPU 추론 후 0ms 음성(TTS)으로 즉각 피드백 (FactContextBuilder 직결)
+     * 화면을 켜지 않고 백그라운드에서 NPU 추론 후 음성(TTS)으로 즉각 피드백 (FactContextBuilder 직결)
      */
     fun executeHeadlessQuery(query: String) {
         serviceScope.launch(Dispatchers.Default) {
@@ -446,6 +448,51 @@ class LocalLlmService : Service() {
         }
     }
 
+    /**
+     * KV 캐시 전체 초기화 (새 대화 세션 시작 시)
+     */
+    fun clearKvCache() {
+        try {
+            clearKvCacheNative()
+            sessionHistory.clear()
+        } catch (e: UnsatisfiedLinkError) {
+            sessionHistory.clear()
+        }
+    }
+
+    /**
+     * 선택적 KV 캐시 프루닝 (주제 급변 시 슬롯 제거)
+     */
+    fun pruneKvCache(p0: Int, p1: Int) {
+        try {
+            pruneKvCacheNative(p0, p1)
+        } catch (e: UnsatisfiedLinkError) {
+            // JNI 폴백
+        }
+    }
+
+    /**
+     * 현재 가동 중인 하드웨어 가속 백엔드 명칭 조회 (NPU / GPU / CPU)
+     */
+    fun getActiveBackendName(): String {
+        return try {
+            getActiveBackendNameNative()
+        } catch (e: UnsatisfiedLinkError) {
+            "미탑재 / 언로드 상태"
+        }
+    }
+
+    /**
+     * NPU 모델이 물리적으로 로드되었는지 확인
+     */
+    fun isModelLoaded(): Boolean {
+        return try {
+            isModelLoadedNative()
+        } catch (e: UnsatisfiedLinkError) {
+            false
+        }
+    }
+
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level >= TRIM_MEMORY_MODERATE) {
@@ -455,6 +502,15 @@ class LocalLlmService : Service() {
                 sessionHistory.clear()
                 sessionHistory.addAll(sub)
             }
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_CRITICAL || level >= TRIM_MEMORY_BACKGROUND) {
+            // 2초 딜레이의 완전 언로드 대신, mmap 가중치 보존 상태에서 KV 캐시를 즉시 비워 LMK SIGKILL 방어
+            trimMemoryNative()
+            android.util.Log.i("LocalLlmService", "onTrimMemory(level=$level): mmap LMK 가중치 슬림화 집행 완료 (콜드스타트 0초 유지)")
         }
     }
 
@@ -471,6 +527,7 @@ class LocalLlmService : Service() {
     // ==========================================
     private external fun initEngineNative(modelPath: String, accelerationType: Int): Boolean
     private external fun releaseEngineNative()
+    private external fun trimMemoryNative()
     private external fun generateTextNative(prompt: String): String
     private external fun generateChatNative(
         systemPrompt: String,
@@ -487,5 +544,9 @@ class LocalLlmService : Service() {
     ): String
     private external fun computeEmbeddingNative(text: String): FloatArray?
     private external fun getEngineStatsNative(): String
+    private external fun clearKvCacheNative()
+    private external fun pruneKvCacheNative(p0: Int, p1: Int)
+    private external fun getActiveBackendNameNative(): String
+    private external fun isModelLoadedNative(): Boolean
 }
 
