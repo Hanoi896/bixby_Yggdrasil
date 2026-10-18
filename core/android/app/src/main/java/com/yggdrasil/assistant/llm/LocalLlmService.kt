@@ -168,7 +168,8 @@ class LocalLlmService : Service() {
                 } else {
                     generateWithPersona(enriched.systemPrompt, enriched.enrichedUserPrompt)
                 }
-                speakHeadless(reply)
+                val cleanReply = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.sanitizeAiResponse(reply)
+                speakHeadless(cleanReply)
             } catch (e: Exception) {
                 speakHeadless("음성 답변 생성 중 오류가 발생했습니다.")
             } finally {

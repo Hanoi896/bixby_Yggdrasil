@@ -23,6 +23,7 @@ import com.yggdrasil.assistant.storage.ModelAutoSyncManager
  * 4대 탭: [대화(채팅)], [상태], [보관소], [설정]
  * 온보딩: 기기 내 모델 미존재 시 ModelDownloadScreen 우선 렌더링
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MainAppScreen(
     personaManager: UserPersonaManager,
@@ -70,12 +71,14 @@ fun MainAppScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            NavigationBar(
-                containerColor = Color(0xFF000000),
-                contentColor = Color.White,
-                modifier = Modifier.border(1.dp, Color(0xFF161616), RoundedCornerShape(0.dp))
-            ) {
+            if (!WindowInsets.isImeVisible) {
+                NavigationBar(
+                    containerColor = Color(0xFF000000),
+                    contentColor = Color.White,
+                    modifier = Modifier.border(1.dp, Color(0xFF161616), RoundedCornerShape(0.dp))
+                ) {
                 tabs.forEachIndexed { index, title ->
                     NavigationBarItem(
                         icon = { Icon(icons[index], contentDescription = title) },
@@ -91,6 +94,7 @@ fun MainAppScreen(
                         )
                     )
                 }
+            }
             }
         },
         containerColor = Color(0xFF000000)

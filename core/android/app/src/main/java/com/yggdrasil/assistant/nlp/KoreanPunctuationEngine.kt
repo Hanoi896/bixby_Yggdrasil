@@ -168,6 +168,75 @@ object KoreanPunctuationEngine {
      * AI 답변 또는 출력 메시지에 따옴표와 쉼표를 정돈하여 표시
      */
     fun formatDisplayMessage(message: String): String {
-        return cleanupFormatting(enrichCommas(message))
+        return cleanupFormatting(enrichCommas(sanitizeAiResponse(message)))
+    }
+
+    /**
+     * NPU sLLM 모델이 Function Calling용 JSON(예: {"action": "...", "spokenFeedback": "..."})으로
+     * 응답을 생성했을 때, 기계식 JSON 메타데이터를 완전히 벗겨내고 순수 한국어 대화 본문만 추출하여 사용자에게 표시.
+     */
+    fun sanitizeAiResponse(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) return trimmed
+
+        // 1. JSON 구조체 감지 및 내부 텍스트 추출 시도
+        val jsonCandidate = if (trimmed.contains("{") && trimmed.contains("}")) {
+            val start = trimmed.indexOf('{')
+            val end = trimmed.lastIndexOf('}')
+            trimmed.substring(start, end + 1)
+        } else null
+
+        if (jsonCandidate != null) {
+            try {
+                val obj = org.json.JSONObject(jsonCandidate)
+                // 도구 호출(Tool Call) JSON 구조체 감지 시 자연어로 변환
+                if (obj.has("tool")) {
+                    val toolName = obj.optString("tool", "")
+                    return "⚙️ '$toolName' 도구를 실행합니다."
+                }
+
+                val spoken = obj.optString("spokenFeedback", "").ifBlank {
+                    obj.optString("content", "").ifBlank {
+                        obj.optString("message", "").ifBlank {
+                            obj.optString("answer", "").ifBlank {
+                                obj.optString("response", "").ifBlank {
+                                    obj.optString("text", "")
+                                }
+                            }
+                        }
+                    }
+                }
+                if (spoken.isNotBlank()) {
+                    return spoken.trim()
+                }
+            } catch (_: Exception) {
+                // 파싱 실패 시 정규식 폴백 진행
+            }
+        }
+
+        // 2. 정규식 기반 "spokenFeedback" 또는 "content" 추출
+        val spokenRegex = Regex("\"(?:spokenFeedback|content|message|answer|response)\"\\s*:\\s*\"(.*?)\"", RegexOption.DOT_MATCHES_ALL)
+        val match = spokenRegex.find(trimmed)
+        if (match != null) {
+            val content = match.groupValues[1]
+                .replace("\\\"", "\"")
+                .replace("\\n", "\n")
+                .replace("\\t", " ")
+                .trim()
+            if (content.isNotBlank()) return content
+        }
+
+        // 3. 마크다운 코드 블록(```json, ```) 껍데기 제거
+        var cleaned = trimmed
+            .replace(Regex("^```(?:json)?\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("```$"), "")
+            .trim()
+
+        // 4. 만약 앞뒤에 남아있는 { ... } 껍데기가 있다면 벗겨냄
+        if (cleaned.startsWith("{") && cleaned.endsWith("}")) {
+            cleaned = cleaned.substring(1, cleaned.length - 1).trim()
+        }
+
+        return cleaned
     }
 }

@@ -89,11 +89,11 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
 
         val density = context.resources.displayMetrics.density
 
-        // 하단 플로팅 컨테이너 (바텀 마진 상향: 네비게이션 바/제스처 바를 넉넉히 회피하여 손쉽게 조작 가능한 120dp 높이 확보)
+        // 하단 플로팅 컨테이너 (네비게이션 바 회피용 안전 패딩 24dp)
         val bottomContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            val padBottom = (120 * density).toInt() // 약 120dp 높이로 화면 하단에서 확실하게 끌어올림
+            val padBottom = (24 * density).toInt()
             val padHoriz = (20 * density).toInt()
             setPadding(padHoriz, 0, padHoriz, padBottom)
             setOnClickListener { /* 캡슐 내부 클릭 시 닫히지 않음 */ }
@@ -628,8 +628,9 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
             Log.i(TAG, "🧠 [인텐트 플래너 결과]: intent=${plan.intent}, spoken='${plan.spokenFeedback}'")
 
             // 실시간 자비스 보이스 피드백 (소리 내어 즉각 대답)
-            if (plan.spokenFeedback.isNotBlank()) {
-                ttsManager.speak(plan.spokenFeedback)
+            val cleanSpoken = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.sanitizeAiResponse(plan.spokenFeedback)
+            if (cleanSpoken.isNotBlank()) {
+                ttsManager.speak(cleanSpoken)
             }
 
             when (plan.intent) {
@@ -815,11 +816,12 @@ class YggdrasilVoiceSession(context: Context) : VoiceInteractionSession(context)
                         }
                     }
 
+                    val cleanAnswer = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.sanitizeAiResponse(answerText)
                     withContext(Dispatchers.Main) {
                         responseCard?.visibility = View.VISIBLE
-                        responseTextView?.text = answerText
+                        responseTextView?.text = cleanAnswer
                     }
-                    ttsManager.speak(answerText)
+                    ttsManager.speak(cleanAnswer)
                     return@launch
                 }
             }

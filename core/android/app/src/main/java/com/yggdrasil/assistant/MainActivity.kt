@@ -210,9 +210,10 @@ class MainActivity : ComponentActivity() {
                                         if (!svc.isRunning()) {
                                             svc.startLocalDaemon(model.absolutePath)
                                         }
-                                        val reply = svc.generateWithPersona(factResult.systemPrompt, factResult.enrichedUserPrompt).ifBlank {
+                                        val rawReply = svc.generateWithPersona(factResult.systemPrompt, factResult.enrichedUserPrompt).ifBlank {
                                             svc.generate(userQuery)
                                         }
+                                        val reply = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.sanitizeAiResponse(rawReply)
                                         speakFeedback(reply)
                                         reply
                                     } else {
@@ -305,7 +306,8 @@ class MainActivity : ComponentActivity() {
                                         if (!svc.isRunning()) {
                                             svc.startLocalDaemon(model.absolutePath)
                                         }
-                                        val reply = svc.generateWithPersonaStream(factResult.systemPrompt, factResult.enrichedUserPrompt, onToken)
+                                        val rawReply = svc.generateWithPersonaStream(factResult.systemPrompt, factResult.enrichedUserPrompt, onToken)
+                                        val reply = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.sanitizeAiResponse(rawReply)
                                         speakFeedback(reply)
                                         reply
                                     } else {

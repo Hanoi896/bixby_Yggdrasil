@@ -46,7 +46,7 @@ enum class SenderType {
  * 빅스비 호출 없이도 앱 내에서 직접 타이핑하여 온디바이스 NPU(EXAONE 3.0)와
  * 자유롭게 대화하고 작업을 지시할 수 있는 전용 챗 룸.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(
     personaManager: UserPersonaManager,
@@ -155,23 +155,31 @@ fun ChatScreen(
                     if (now - lastUiUpdateTime >= 33L || token.contains("\n")) {
                         lastUiUpdateTime = now
                         val currentText = synchronized(tokenLock) { accumulated.toString() }
+                        val displayCurrent = if (currentText.startsWith("{") || currentText.startsWith("```")) {
+                            val sanitizedSoFar = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.sanitizeAiResponse(currentText)
+                            if (sanitizedSoFar.isNotBlank() && !sanitizedSoFar.startsWith("{")) sanitizedSoFar else "답변을 작성하고 있습니다..."
+                        } else {
+                            currentText
+                        }
                         coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                             if (targetIndex in messages.indices) {
-                                messages[targetIndex] = messages[targetIndex].copy(text = currentText)
+                                messages[targetIndex] = messages[targetIndex].copy(text = displayCurrent)
                             }
                         }
                     }
                 }
 
                 val finalText = result.ifBlank { synchronized(tokenLock) { accumulated.toString() } }
+                val sanitized = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.sanitizeAiResponse(finalText)
                 if (targetIndex in messages.indices) {
-                    messages[targetIndex] = messages[targetIndex].copy(text = finalText)
+                    messages[targetIndex] = messages[targetIndex].copy(text = sanitized)
                 }
-                finalText
+                sanitized
             } else {
                 val response = onSendMessageToNpu(trimmed)
-                messages.add(ChatMessage(sender = SenderType.ASSISTANT, text = response))
-                response
+                val sanitized = com.yggdrasil.assistant.nlp.KoreanPunctuationEngine.sanitizeAiResponse(response)
+                messages.add(ChatMessage(sender = SenderType.ASSISTANT, text = sanitized))
+                sanitized
             }
 
             isThinking = false
@@ -220,7 +228,15 @@ fun ChatScreen(
             }
         }
     ) {
+        val isImeVisible = WindowInsets.isImeVisible
+        LaunchedEffect(isImeVisible) {
+            if (isImeVisible && messages.isNotEmpty()) {
+                listState.animateScrollToItem(messages.size - 1)
+            }
+        }
+
         Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 TopAppBar(
                     navigationIcon = {
@@ -263,15 +279,16 @@ fun ChatScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .padding(top = innerPadding.calculateTopPadding())
+                    .imePadding()
             ) {
                 // 1. 대화 메시지 리스트
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     items(messages, key = { it.id }) { msg ->
@@ -298,7 +315,7 @@ fun ChatScreen(
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(quickChips) { chip ->
@@ -314,7 +331,7 @@ fun ChatScreen(
                     }
                 }
 
-                // 3. 사진 4: 차세대 프로페셔널 액션 도크 입력 바 (키보드 imePadding 연동)
+                // 3. 차세대 프로페셔널 액션 도크 입력 바 (키보드 상단 즉시 밀착)
                 ActionDockInputBar(
                     inputText = inputText,
                     onInputTextChanged = { inputText = it },
@@ -327,7 +344,7 @@ fun ChatScreen(
                     onVoiceClicked = {
                         hapticManager.performActionClick()
                     },
-                    modifier = Modifier.imePadding()
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
             }
         }

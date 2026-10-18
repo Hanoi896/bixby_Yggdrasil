@@ -187,7 +187,7 @@ class FactContextBuilder private constructor(private val context: Context) {
                     )
                 } catch (_: Exception) { "" }
 
-                val basePrompt = "당신은 갤럭시 S26 울트라 100% 온디바이스 개인 비서 Yggdrasil입니다. 사용자의 질문에 친절하고 정직하게 답변하되, 모르는 정보나 없는 사실은 절대 추측하지 말고 솔직하게 모른다고 답하십시오."
+                val basePrompt = "당신은 갤럭시 S26 울트라 100% 온디바이스 개인 비서 Yggdrasil입니다. 사용자의 질문에 친절하고 정직하게 답변하십시오. 답변은 반드시 한국어 자연어 대화체로 작성해야 하며, 절대로 JSON 구조나 마크다운 백틱(```)으로 감싸서 출력하지 마십시오."
                 val fullSystemPrompt = if (toolPrompt.isNotBlank()) {
                     "$basePrompt\n\n$toolPrompt"
                 } else basePrompt
